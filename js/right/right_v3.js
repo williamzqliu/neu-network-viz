@@ -29,15 +29,21 @@ const RightV3 = (() => {
     if (placeholder) placeholder.style.display = '';
   }
 
-  /* ── showStats: render ego network context panel ─────────────────────── */
+  /* ── showStats: delegate to RightV1's scholar card (v3 context) ─────── */
   function showStats(id) {
     Logger.info('RightV3', `showStats id=${id}`);
 
+    const placeholder = getEl('rv3-placeholder', 'RightV3');
+    const card        = getEl('rv3-card',        'RightV3');
+    if (!card) return;
+
+    RightV1.showScholar(id, { card, placeholder, isV3: true });
+  }
+
+  /* ── _showStats_legacy (kept for reference, no longer called) ─────────── */
+  function _showStats_legacy(id) {
     const s = DS.scholarMap.get(id);
-    if (!s) {
-      Logger.warn('RightV3', `scholar not found: ${id}`);
-      return;
-    }
+    if (!s) return;
 
     const placeholder = getEl('rv3-placeholder', 'RightV3');
     const card        = getEl('rv3-card', 'RightV3');

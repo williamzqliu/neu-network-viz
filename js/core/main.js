@@ -56,6 +56,10 @@ function switchView(view) {
       pane.classList.toggle('active', pane.id === 'view-' + view);
     });
 
+    // Show/hide the v3 switcher (lives outside view-v3)
+    const v3sw = document.getElementById('view-switcher-v3');
+    if (v3sw) v3sw.style.display = view === 'v3' ? 'flex' : 'none';
+
     // Determine the default subview for this view
     const subviewDefaults = { v1: lastV1Subview, v2: 'dept', v3: 'ego' };
     const subview = subviewDefaults[view] || '';
@@ -74,9 +78,13 @@ function switchView(view) {
       if (DS.state._pendingV3Id) {
         const id = DS.state._pendingV3Id;
         DS.state._pendingV3Id = null;
+        // v3SourceView already set to 'v1' by the "Open Scholar Profile" button
         requestAnimationFrame(() => requestAnimationFrame(() => {
           View3.build(id, DS.state.egoHops);
         }));
+      } else {
+        // Navigated via header tab — hide back button in v3 right panel
+        DS.state.v3SourceView = 'header';
       }
     }
   }, FADE_MS);
@@ -159,16 +167,38 @@ function _restoreV1Display() {
   _handleV1SubView(subview === 'clusters' ? 'clusters' : 'collabmap');
 }
 
-/* ── Scholar Profile: go to Collaboration Map and highlight scholar ─────── */
-// Called by the "Collaboration Map" button inside Scholar Profile (v3)
+/* ── Scholar Profile: v3 sub-view switching ────────────────────────────── */
+// Called by the two buttons in #view-switcher-v3
+function setV3Subview(subview) {
+  if (DS.state.view !== 'v3') return;
+  DS.state.subview = subview;
+  Logger.info('Main', `setV3Subview subview=${subview}`);
+
+  // Highlight active button
+  const sw = document.getElementById('view-switcher-v3');
+  if (sw) sw.querySelectorAll('.vs-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.subview === subview));
+
+  if (subview === 'collabmap') {
+    // Show v1 canvas; keep left/right panels in v3 state
+    document.querySelectorAll('.view').forEach(el =>
+      el.classList.toggle('active', el.id === 'view-v1'));
+    const id = DS.state.selectedId;
+    if (id) requestAnimationFrame(() => { View1.focusNode && View1.focusNode(id); });
+  } else {
+    // ego: restore v3 SVG
+    document.querySelectorAll('.view').forEach(el =>
+      el.classList.toggle('active', el.id === 'view-v3'));
+  }
+}
+
+/* ── goToCollabMap: full navigation back to v1 (used by "Back" button) ─── */
 function goToCollabMap() {
   const id = DS.state.selectedId;
   Logger.info('Main', `goToCollabMap id=${id}`);
   switchView('v1');
   if (id) {
-    requestAnimationFrame(() => {
-      View1.focusNode && View1.focusNode(id);
-    });
+    requestAnimationFrame(() => { View1.focusNode && View1.focusNode(id); });
   }
 }
 

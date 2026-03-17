@@ -51,8 +51,9 @@
 
       <!-- Brand + feedback link -->
       <div id="hd-brand">
+        <button id="hd-brand-home" onclick="switchView('v1')">
         <div id="hd-logo">
-          <svg width="28" height="28" viewBox="0 0 22 22" fill="none">
+          <svg width="34" height="34" viewBox="0 0 22 22" fill="none">
             <circle cx="11" cy="11" r="9.5" stroke="#C8102E" stroke-width="1.2" stroke-dasharray="3 2.5"
               opacity="0.5" />
             <circle cx="11" cy="11" r="5.5" stroke="#C8102E" stroke-width="1.2" />
@@ -63,6 +64,7 @@
           <div class="hd-t1">Research Collaboration Network</div>
           <div class="hd-t2">NORTHEASTERN UNIVERSITY</div>
         </div>
+        </button>
         <a id="hd-feedback" href="https://forms.gle/a8QaMCJ8svCSE4qU6" target="_blank" rel="noopener">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
             <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
@@ -283,21 +285,18 @@
           <!-- Ego network SVG (shown after a scholar is selected) -->
           <svg id="v3-svg" style="position:absolute;inset:0;width:100%;height:100%;display:none"></svg>
 
-          <!-- Sub-view switcher (top-right)
-               data-subview: 'ego' | 'collabmap'
-               'ego'       = show ego network (default)
-               'collabmap' = return to University Network and highlight this scholar
-          -->
-          <div id="view-switcher-v3">
-            <button class="vs-btn" data-subview="collabmap" onclick="goToCollabMap()">
-              <span class="vs-btn-label">Collaboration Map</span>
-            </button>
-            <button class="vs-btn active" data-subview="ego">
-              <span class="vs-btn-label">Ego Network</span>
-            </button>
-          </div>
-
         </div><!-- /view-v3 -->
+
+        <!-- V3 sub-view switcher — lives outside view-v3 so it stays visible
+             when the collabmap sub-view shows the v1 canvas instead -->
+        <div id="view-switcher-v3" style="display:none">
+          <button class="vs-btn" data-subview="collabmap" onclick="setV3Subview('collabmap')">
+            <span class="vs-btn-label">Collaboration Map</span>
+          </button>
+          <button class="vs-btn active" data-subview="ego" onclick="setV3Subview('ego')">
+            <span class="vs-btn-label">Ego Network</span>
+          </button>
+        </div>
 
       </main>
 
@@ -312,7 +311,7 @@
         <div id="rp-v1" class="rp-view active">
           <div id="rv1-placeholder">
             <!-- Default overview — rendered by RightV1.reset() -->
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" opacity=".18">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" opacity=".4">
               <circle cx="16" cy="16" r="13" stroke="currentColor" stroke-width="1.5" />
               <circle cx="16" cy="12" r="4" stroke="currentColor" stroke-width="1.5" />
               <path d="M8 26c0-4.4 3.6-8 8-8s8 3.6 8 8" stroke="currentColor" stroke-width="1.5" />
@@ -337,7 +336,12 @@
         <!-- V3: Scholar Profile right panel -->
         <div id="rp-v3" class="rp-view">
           <div id="rv3-placeholder">
-            <!-- Default prompt — rendered by RightV3.reset() -->
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" opacity=".4">
+              <circle cx="16" cy="16" r="13" stroke="currentColor" stroke-width="1.5" />
+              <circle cx="16" cy="12" r="4" stroke="currentColor" stroke-width="1.5" />
+              <path d="M8 26c0-4.4 3.6-8 8-8s8 3.6 8 8" stroke="currentColor" stroke-width="1.5" />
+            </svg>
+            <p>Select a scholar<br>to view profile</p>
           </div>
           <div id="rv3-card" style="display:none">
             <!-- Ego stats — rendered by RightV3.showStats() -->

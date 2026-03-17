@@ -39,9 +39,29 @@ const LeftV1 = (() => {
   function _buildHTML() {
     const s = DS.state;
 
+    const _collegeOrder = [
+      'Bouve College of Health Sciences',
+      'College of Arts, Media and Design',
+      'College of Engineering',
+      'College of Professional Studies',
+      'College of Science',
+      'College of Social Sciences & Humanities',
+      "D'Amore-McKim School of Business",
+      'Khoury College of Computer Sciences',
+      'School of Law',
+      'Mills College at Northeastern',
+      'Northeastern University London',
+    ];
     const colleges = UNITS
       .filter(u => u.unit_type === 'college' && u.included)
-      .sort((a, b) => a.unit_name.localeCompare(b.unit_name));
+      .sort((a, b) => {
+        const ai = _collegeOrder.indexOf(a.unit_name);
+        const bi = _collegeOrder.indexOf(b.unit_name);
+        if (ai === -1 && bi === -1) return a.unit_name.localeCompare(b.unit_name);
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      });
 
     const centers = UNITS
       .filter(u => u.unit_type === 'center' && u.included)
@@ -55,11 +75,9 @@ const LeftV1 = (() => {
       const memberCount = col.scholar_count || col.active_count || '';
 
       const deptRows = depts.map(d => {
-        const mc = d.scholar_count || d.active_count || '';
-        const faded = s.hiddenUnits.has(d.unit_id) ? ' faded' : '';
-        return `<div class="lv1-dept-row${faded}" data-uid="${d.unit_id}" title="${d.unit_name}">
+        const active = s.unitFilter && s.unitFilter.has(d.unit_id) ? ' active' : '';
+        return `<div class="lv1-dept-row${active}" data-uid="${d.unit_id}" title="${d.unit_name}" style="border-left-color:${colColor}">
           <span class="lv1-dept-name">${d.unit_name}</span>
-          <span class="lv1-dept-members">${mc ? mc + ' MEMBERS' : ''}</span>
         </div>`;
       }).join('');
 
@@ -69,19 +87,20 @@ const LeftV1 = (() => {
             <div class="lv1-college-dot" style="background:${colColor}"></div>
             <span class="lv1-college-name">${col.unit_name}</span>
           </div>
-          ${deptCount ? `<span class="lv1-college-depts">${deptCount} DEPTS</span>
-            <span class="lv1-college-chevron">▶</span>` : ''}
+          ${deptCount ? `<div class="lv1-college-expand">
+            <span class="lv1-college-depts">(${deptCount})</span>
+            <span class="lv1-college-chevron">▶</span>
+          </div>` : ''}
         </div>
-        ${deptCount ? `<div class="lv1-dept-list" style="display:none">${deptRows}</div>` : ''}
+        ${deptCount ? `<div class="lv1-dept-list lv1-collapsible">${deptRows}</div>` : ''}
       `;
     }).join('');
 
     const centerRows = centers.map(c => {
-      const mc = c.scholar_count || c.active_count || '';
-      const faded = s.hiddenUnits.has(c.unit_id) ? ' faded' : '';
-      return `<div class="lv1-center-row${faded}" data-uid="${c.unit_id}" title="${c.unit_name}">
+      const active = s.unitFilter && s.unitFilter.has(c.unit_id) ? ' active' : '';
+      const empty = (c.active_count || c.scholar_count || 0) === 0 ? ' empty' : '';
+      return `<div class="lv1-center-row${active}${empty}" data-uid="${c.unit_id}" title="${c.unit_name}">
         <span class="lv1-center-name">${c.unit_name}</span>
-        <span class="lv1-center-members">${mc ? mc + ' MEMBERS' : ''}</span>
       </div>`;
     }).join('');
 
@@ -90,25 +109,22 @@ const LeftV1 = (() => {
       <div class="lv1-section">
         <div class="sec-header">
           <div class="sec-title">SCHOLARS</div>
-          <button class="sec-reset" onclick="LeftV1.resetScholars()">Reset</button>
+          <button class="sec-reset" onclick="LeftV1.resetScholars()"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10 6A4 4 0 1 1 8.5 2.8"/><polyline points="9,1 8.5,3.2 6.3,2.7"/></svg>Reset</button>
         </div>
         <div class="lv1-filter-group">
-          <div class="lv1-filter-label">STATUS</div>
+          <div class="lv1-filter-label" style="font-size:13px">STATUS</div>
           <div class="btn-group">
-            <button class="filter-btn${s.statusFilter === 'all' ? ' active' : ''}" data-sf="all"        onclick="LeftV1.setStatus('all')">All</button>
-            <button class="filter-btn${s.statusFilter === 'current' ? ' active' : ''}" data-sf="current"    onclick="LeftV1.setStatus('current')">Active</button>
-            <button class="filter-btn${s.statusFilter === 'former' ? ' active' : ''}" data-sf="former"     onclick="LeftV1.setStatus('former')">Former</button>
-            <button class="filter-btn${s.statusFilter === 'no_retired' ? ' active' : ''}" data-sf="no_retired" onclick="LeftV1.setStatus('no_retired')">Retired</button>
+            <button class="filter-btn${s.statusFilter.has('current') ? ' active' : ''}" data-sf="current" onclick="LeftV1.setStatus('current')">Active</button>
+            <button class="filter-btn addon-btn${s.statusFilter.has('former') ? ' active' : ''}" data-sf="former" onclick="LeftV1.setStatus('former')">Former</button>
+            <button class="filter-btn addon-btn${s.statusFilter.has('retired') ? ' active' : ''}" data-sf="retired" onclick="LeftV1.setStatus('retired')">Retired</button>
           </div>
         </div>
         <div class="lv1-filter-group">
-          <div class="lv1-filter-label">TRACK</div>
+          <div class="lv1-filter-label" style="font-size:13px">TRACK</div>
           <div class="btn-group">
-            <button class="filter-btn${s.trackFilter === 'all' ? ' active' : ''}" onclick="LeftV1.setTrack('all')">All</button>
-            <button class="filter-btn${s.trackFilter === 'teaching_clinical' ? ' active' : ''}" onclick="LeftV1.setTrack('teaching_clinical')">Teaching</button>
-            <button class="filter-btn${s.trackFilter === 'teaching_clinical' ? ' active' : ''}" onclick="LeftV1.setTrack('teaching_clinical')">Clinical</button>
-            <button class="filter-btn${s.trackFilter === 'research_faculty' ? ' active' : ''}" onclick="LeftV1.setTrack('research_faculty')">Research Faculty</button>
-            <button class="filter-btn${s.trackFilter === 'research_other' ? ' active' : ''}" onclick="LeftV1.setTrack('research_other')">Research Other</button>
+            <button class="filter-btn${s.trackFilter.has('research_faculty') ? ' active' : ''}" data-tf="research_faculty" onclick="LeftV1.setTrack('research_faculty')">Research Faculty</button>
+            <button class="filter-btn addon-btn${s.trackFilter.has('research_other') ? ' active' : ''}" data-tf="research_other" onclick="LeftV1.setTrack('research_other')">Research Other</button>
+            <button class="filter-btn addon-btn${s.trackFilter.has('teaching_clinical') ? ' active' : ''}" data-tf="teaching_clinical" onclick="LeftV1.setTrack('teaching_clinical')">Teaching / Clinical</button>
           </div>
         </div>
       </div>
@@ -118,23 +134,26 @@ const LeftV1 = (() => {
         <div class="sec-header">
           <div class="sec-title">
             RESEARCH UNITS
-            <span class="info-icon" data-tip="Filter by department or research center. Click a college to expand its departments.">?</span>
+            <span class="info-icon" data-tip="Manually curated. Some units are merged and non-research centers are excluded.">?</span>
           </div>
-          <button class="sec-reset" onclick="LeftV1.resetUnits()">Reset</button>
+          <button class="sec-reset" onclick="LeftV1.resetUnits()"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10 6A4 4 0 1 1 8.5 2.8"/><polyline points="9,1 8.5,3.2 6.3,2.7"/></svg>Reset</button>
         </div>
         <div class="lv1-units-section">
           <div class="lv1-units-header" onclick="LeftV1.toggleSection(this,'lv1-colleges-list')">
             <span>Colleges (${colleges.length})</span>
             <span class="lv1-chevron open">▶</span>
           </div>
-          <div id="lv1-colleges-list">${collegeTree}</div>
+          <div id="lv1-colleges-list" class="lv1-collapsible open">${collegeTree}</div>
         </div>
         <div class="lv1-units-section">
           <div class="lv1-units-header" onclick="LeftV1.toggleSection(this,'lv1-centers-list')">
-            <span>Research Centers (${centers.length})</span>
+            <div class="lv1-units-header-left">
+              <div class="lv1-college-dot" style="background:var(--col-centers)"></div>
+              <span>Research Centers (${centers.length})</span>
+            </div>
             <span class="lv1-chevron">▶</span>
           </div>
-          <div id="lv1-centers-list" style="display:none">${centerRows}</div>
+          <div id="lv1-centers-list" class="lv1-collapsible">${centerRows}</div>
         </div>
       </div>
 
@@ -142,28 +161,27 @@ const LeftV1 = (() => {
       <div class="lv1-section">
         <div class="sec-header">
           <div class="sec-title">COLLABORATION FILTER</div>
-          <button class="sec-reset" onclick="LeftV1.resetCollabFilter()">Reset</button>
+          <button class="sec-reset" onclick="LeftV1.resetCollabFilter()"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10 6A4 4 0 1 1 8.5 2.8"/><polyline points="9,1 8.5,3.2 6.3,2.7"/></svg>Reset</button>
         </div>
         <div class="slider-row">
           <div class="slider-label-row">
             <span class="slider-label">
               YEAR RANGE
-              <span class="info-icon" data-tip="Filter collaborations by the year they occurred">?</span>
+              <span class="info-icon" data-tip="Filter collaborations by year of publication.</br></br><em>Drag a handle to adjust. Click a handle to enter single-year mode. Click the track to restore range mode.</em>">?</span>
             </span>
-            <span class="slider-val" id="lv1-year-val">${s.yearFrom}–${s.yearTo}</span>
+            <span class="slider-val" id="lv1-year-val">${s._yearSingleMode ? s.yearFrom : s.yearFrom + '–' + s.yearTo}</span>
           </div>
-          <input type="range" id="lv1-yearfrom" min="1980" max="2026" value="${s.yearFrom}" step="1">
-          <input type="range" id="lv1-yearto"   min="1980" max="2026" value="${s.yearTo}"   step="1" style="margin-top:3px">
+          <div class="crs-wrap" id="lv1-year-crs"></div>
         </div>
         <div class="slider-row">
           <div class="slider-label-row">
             <span class="slider-label">
               MINIMUM COLLABS
-              <span class="info-icon" data-tip="Minimum number of shared publications between two scholars to show an edge">?</span>
+              <span class="info-icon" data-tip="Minimum number of shared publications between two scholars to show an edge.">?</span>
             </span>
             <span class="slider-val" id="lv1-thresh-val">${s.threshold}</span>
           </div>
-          <input type="range" id="lv1-thresh" min="1" max="20" value="${s.threshold}" step="1">
+          <div class="crs-wrap" id="lv1-thresh-crs"></div>
         </div>
       </div>
 
@@ -171,75 +189,204 @@ const LeftV1 = (() => {
       <div class="lv1-section">
         <div class="sec-header">
           <div class="sec-title">DISPLAY</div>
-          <button class="sec-reset" onclick="LeftV1.resetDisplay()">Reset</button>
+          <button class="sec-reset" onclick="LeftV1.resetDisplay()"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10 6A4 4 0 1 1 8.5 2.8"/><polyline points="9,1 8.5,3.2 6.3,2.7"/></svg>Reset</button>
         </div>
         <div class="lv1-filter-group">
-          <div class="lv1-filter-label">NODE</div>
+          <div class="lv1-filter-label">NETWORK</div>
 <div class="btn-group">
   <button class="vc-btn${s.showLabels ? ' active' : ''}" id="lv1-btn-labels"   onclick="toggleLabels()">Labels</button>
+  <button class="vc-btn${s.showEdgeClick ? ' active' : ''}" id="lv1-btn-edgeclick" onclick="LeftV1.toggleEdgeClick()">Link Select</button>
   <button class="vc-btn${s.showIsolated ? ' active' : ''}" id="lv1-btn-isolated" onclick="toggleIsolated()">Show Isolated</button>
-  <button class="vc-btn${s.frozen ? ' active' : ''}" id="lv1-btn-freeze"   onclick="toggleFreeze()">Freeze</button>
-  <button class="vc-btn${s.showEdgeClick ? ' active' : ''}" id="lv1-btn-edgeclick" onclick="LeftV1.toggleEdgeClick()">Edge Links</button>
 </div>
         </div>
-        <div class="colored-by-row">
-          <span class="colored-by-label">COLORED BY</span>
-          <span class="info-icon" data-tip="Change node color encoding">?</span>
-          <button class="cb-btn${s.colorMode === 'college' ? ' active' : ''}" onclick="LeftV1.setColorMode('college')">College</button>
-          <button class="cb-btn${s.colorMode === 'track' ? ' active' : ''}" onclick="LeftV1.setColorMode('track')">Track</button>
-          <button class="cb-btn${s.colorMode === 'bridge' ? ' active' : ''}" onclick="LeftV1.setColorMode('bridge')">Bridge Role</button>
-          <button class="cb-btn${s.colorMode === 'community' ? ' active' : ''}" onclick="LeftV1.setColorMode('community')">Leiden Community</button>
+        <div class="lv1-filter-group">
+          <div class="lv1-filter-label">COLORED BY
+            <span class="info-icon" data-tip="<b>College</b> colors each scholar by their primary college affiliation.</br></br><b>Bridge Role</b> colors scholars by their bridge score, which measures how strongly a scholar connects otherwise separate research communities.</br></br><b>Community</b> colors scholars by their Leiden community. The Leiden algorithm detects groups of scholars who collaborate densely with each other but sparsely with the rest of the network.">?</span>
+          </div>
+<div class="btn-group">
+  <button class="cb-btn${s.colorMode === 'college' ? ' active' : ''}" data-cm="college" onclick="LeftV1.setColorMode('college')">College</button>
+  <button class="cb-btn${s.colorMode === 'bridge' ? ' active' : ''}" data-cm="bridge" onclick="LeftV1.setColorMode('bridge')">Bridge Role</button>
+  <button class="cb-btn${s.colorMode === 'community' ? ' active' : ''}" data-cm="community" onclick="LeftV1.setColorMode('community')">Community</button>
+</div>
         </div>
 
-        <!-- Advanced layout -->
-        <div class="lv1-advanced-toggle" onclick="LeftV1.toggleAdvanced(this)">
-          ▸ ADVANCED LAYOUT
-        </div>
-        <div id="lv1-advanced-layout" style="display:none">
-          <div class="slider-row">
-            <div class="slider-label-row">
-              <span class="slider-label">REPULSION</span>
-              <span class="slider-val" id="lv1-charge-val">−120</span>
-            </div>
-            <input type="range" id="lv1-charge" min="-500" max="-20" value="-120" step="10">
-          </div>
-          <div class="slider-row">
-            <div class="slider-label-row">
-              <span class="slider-label">LINK DISTANCE</span>
-              <span class="slider-val" id="lv1-linkdist-val">200</span>
-            </div>
-            <input type="range" id="lv1-linkdist" min="20" max="200" value="200" step="5">
-          </div>
-        </div>
       </div>
     `;
   }
 
-  /* ── Event binding ───────────────────────────────────────────────────── */
-  function _bindEvents(container) {
-    // Year range sliders
-    const yf = container.querySelector('#lv1-yearfrom');
-    const yt = container.querySelector('#lv1-yearto');
-    const yv = container.querySelector('#lv1-year-val');
-    if (yf && yt) {
-      const updateYear = () => {
-        DS.state.yearFrom = Math.min(+yf.value, +yt.value);
-        DS.state.yearTo = Math.max(+yf.value, +yt.value);
-        if (yv) yv.textContent = `${DS.state.yearFrom}–${DS.state.yearTo}`;
-        View1.build();
-      };
-      yf.oninput = updateYear;
-      yt.oninput = updateYear;
+  /* ── Custom dual-handle year range slider ────────────────────────────── */
+  function _initYearSlider(container) {
+    const wrap = container.querySelector('#lv1-year-crs');
+    const valEl = container.querySelector('#lv1-year-val');
+    if (!wrap) return;
+
+    const MIN = 1980, MAX = 2026;
+    let fromVal = DS.state.yearFrom;
+    let toVal = DS.state.yearTo;
+    let singleMode = DS.state._yearSingleMode || false;
+    let blockTrackClick = false;
+
+    const valToPct = v => (v - MIN) / (MAX - MIN) * 100;
+    const pctToVal = p => Math.round(MIN + p / 100 * (MAX - MIN));
+
+    function updateDisplay() {
+      const handles = wrap.querySelectorAll('.crs-handle');
+      const fill = wrap.querySelector('.crs-fill');
+      const track = wrap.querySelector('.crs-track');
+      handles[0].style.left = valToPct(fromVal) + '%';
+      if (singleMode) {
+        handles[1].style.display = 'none';
+        fill.style.left = '0'; fill.style.width = '0';
+        track.classList.add('crs-single');
+        if (valEl) valEl.textContent = `${fromVal}`;
+      } else {
+        handles[1].style.left = valToPct(toVal) + '%';
+        handles[1].style.display = '';
+        fill.style.left = valToPct(fromVal) + '%';
+        fill.style.width = (valToPct(toVal) - valToPct(fromVal)) + '%';
+        track.classList.remove('crs-single');
+        if (valEl) valEl.textContent = `${fromVal}–${toVal}`;
+      }
     }
 
-    // Threshold slider
-    const th = container.querySelector('#lv1-thresh');
-    const tv = container.querySelector('#lv1-thresh-val');
-    if (th) th.oninput = function () {
-      DS.state.threshold = +this.value;
-      if (tv) tv.textContent = this.value;
+    function commit() {
+      DS.state.yearFrom = fromVal;
+      DS.state.yearTo = singleMode ? fromVal + 1 : toVal;
+      DS.state._yearSingleMode = singleMode;
+      updateDisplay();
       View1.build();
-    };
+    }
+
+    wrap.innerHTML = `
+      <div class="crs-track"><div class="crs-fill"></div></div>
+      <div class="crs-handle"></div>
+      <div class="crs-handle"></div>`;
+
+    const track = wrap.querySelector('.crs-track');
+    const handles = wrap.querySelectorAll('.crs-handle');
+
+    handles.forEach((handle, idx) => {
+      const isTo = idx === 1;
+      handle.addEventListener('mousedown', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        blockTrackClick = true;
+        const startX = e.clientX;
+        let moved = false;
+
+        const onMove = mv => {
+          if (Math.abs(mv.clientX - startX) > 3) moved = true;
+          const rect = track.getBoundingClientRect();
+          const p = Math.max(0, Math.min(100, (mv.clientX - rect.left) / rect.width * 100));
+          const v = pctToVal(p);
+          if (isTo) {
+            toVal = Math.max(fromVal + 1, Math.min(MAX, v));
+          } else {
+            fromVal = singleMode
+              ? Math.max(MIN, Math.min(MAX, v))
+              : Math.max(MIN, Math.min(toVal - 1, v));
+          }
+          updateDisplay();
+        };
+
+        const onUp = () => {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          setTimeout(() => { blockTrackClick = false; }, 0);
+          if (!moved && !singleMode) {
+            // Click on handle: collapse to single mode
+            if (isTo) {
+              singleMode = true;
+            } else {
+              fromVal = toVal;
+              singleMode = true;
+            }
+          }
+          commit();
+        };
+
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    });
+
+    // Click on track: restore second handle (single → range)
+    track.addEventListener('click', e => {
+      if (blockTrackClick || !singleMode) return;
+      const rect = track.getBoundingClientRect();
+      const p = Math.max(0, Math.min(100, (e.clientX - rect.left) / rect.width * 100));
+      const v = pctToVal(p);
+      if (v > fromVal) { toVal = v; }
+      else if (v < fromVal) { toVal = fromVal; fromVal = v; }
+      else { toVal = Math.min(MAX, fromVal + 1); }
+      singleMode = false;
+      commit();
+    });
+
+    updateDisplay();
+  }
+
+  /* ── Single-handle threshold slider ─────────────────────────────────── */
+  function _initThreshSlider(container) {
+    const wrap = container.querySelector('#lv1-thresh-crs');
+    const valEl = container.querySelector('#lv1-thresh-val');
+    if (!wrap) return;
+
+    const MIN = 0, MAX = 20;
+    let val = DS.state.threshold;
+
+    const valToPct = v => (v - MIN) / (MAX - MIN) * 100;
+    const pctToVal = p => Math.round(MIN + p / 100 * (MAX - MIN));
+
+    wrap.innerHTML = `
+      <div class="crs-track"><div class="crs-fill"></div></div>
+      <div class="crs-handle"></div>`;
+
+    const track = wrap.querySelector('.crs-track');
+    const fill  = wrap.querySelector('.crs-fill');
+    const handle = wrap.querySelector('.crs-handle');
+
+    function updateDisplay() {
+      handle.style.left = valToPct(val) + '%';
+      fill.style.left = '0';
+      fill.style.width = valToPct(val) + '%';
+      if (valEl) valEl.textContent = val;
+    }
+
+    function commit() {
+      DS.state.threshold = val;
+      updateDisplay();
+      View1.build();
+    }
+
+    handle.addEventListener('mousedown', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const onMove = mv => {
+        const rect = track.getBoundingClientRect();
+        const p = Math.max(0, Math.min(100, (mv.clientX - rect.left) / rect.width * 100));
+        val = pctToVal(p);
+        updateDisplay();
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        commit();
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+
+    updateDisplay();
+  }
+
+  /* ── Event binding ───────────────────────────────────────────────────── */
+  function _bindEvents(container) {
+    // Year range custom slider
+    _initYearSlider(container);
+
+    // Threshold slider
+    _initThreshSlider(container);
 
     // Force charge slider
     const ch = container.querySelector('#lv1-charge');
@@ -257,31 +404,78 @@ const LeftV1 = (() => {
       View1.setForceLink && View1.setForceLink(+this.value);
     };
 
+    // Sync initial legend state
+    _syncCollegeLegendState(container);
+
     // College row expand/collapse
     container.querySelectorAll('.lv1-college-row').forEach(row => {
       const chevron = row.querySelector('.lv1-college-chevron');
-      if (!chevron) return;
-      onTap(row, () => {
-        const deptList = row.nextElementSibling;
-        if (!deptList || !deptList.classList.contains('lv1-dept-list')) return;
-        const isOpen = deptList.style.display !== 'none';
-        deptList.style.display = isOpen ? 'none' : 'block';
-        chevron.classList.toggle('open', !isOpen);
-      });
+      const left    = row.querySelector('.lv1-college-left');
+      const expand  = row.querySelector('.lv1-college-expand');
+
+      // Left area (dot + name): toggle legend filter
+      if (left) {
+        onTap(left, e => {
+          e.stopPropagation();
+          const college = row.dataset.college;
+          if (college && View1.toggleLegendFilter) {
+            View1.toggleLegendFilter(college);
+            _syncCollegeLegendState(container);
+          }
+        });
+      }
+
+      // Right area (count + chevron): expand/collapse dept list
+      if (expand && chevron) {
+        onTap(expand, e => {
+          e.stopPropagation();
+          const deptList = row.nextElementSibling;
+          if (!deptList || !deptList.classList.contains('lv1-dept-list')) return;
+          const isOpen = deptList.classList.contains('open');
+          deptList.classList.toggle('open', !isOpen);
+          chevron.classList.toggle('open', !isOpen);
+        });
+      }
     });
 
-    // Dept row click - toggle unit filter
+    // Dept row click - highlight scholars in this dept
     container.querySelectorAll('.lv1-dept-row').forEach(row => {
       onTap(row, e => {
         e.stopPropagation();
-        _toggleUnit(row);
+        const uid = row.dataset.uid;
+        if (uid && View1.toggleUnitFilter) View1.toggleUnitFilter(uid);
       });
     });
 
-    // Center row click - toggle unit filter
+    // Center row click - highlight scholars in this center
     container.querySelectorAll('.lv1-center-row').forEach(row => {
-      onTap(row, () => { _toggleUnit(row); });
+      onTap(row, e => {
+        e.stopPropagation();
+        const uid = row.dataset.uid;
+        if (uid && View1.toggleUnitFilter) View1.toggleUnitFilter(uid);
+      });
     });
+  }
+
+  function _syncCollegeLegendState(container) {
+    const lf = DS.state.legendFilter;
+    const uf = DS.state.unitFilter;
+    container.querySelectorAll('.lv1-college-row').forEach(row => {
+      const left = row.querySelector('.lv1-college-left');
+      if (!left) return;
+      left.classList.toggle('active', !!(lf && lf.has(row.dataset.college)));
+    });
+    container.querySelectorAll('.lv1-dept-row').forEach(row => {
+      row.classList.toggle('active', !!(uf && uf.has(row.dataset.uid)));
+    });
+    container.querySelectorAll('.lv1-center-row').forEach(row => {
+      row.classList.toggle('active', !!(uf && uf.has(row.dataset.uid)));
+    });
+  }
+
+  function syncLegendState() {
+    const container = getEl('left-content', 'LeftV1');
+    if (container) _syncCollegeLegendState(container);
   }
 
   function _toggleUnit(row) {
@@ -299,26 +493,29 @@ const LeftV1 = (() => {
 
   /* ── Public setters (called from HTML onclick) ───────────────────────── */
   function setStatus(v) {
-    DS.state.statusFilter = v;
+    const sf = DS.state.statusFilter;
+    if (sf.has(v) && sf.size === 1) return; // keep at least one selected
+    sf.has(v) ? sf.delete(v) : sf.add(v);
     document.querySelectorAll('[data-sf]').forEach(b => {
-      b.classList.toggle('active', b.dataset.sf === v);
+      b.classList.toggle('active', sf.has(b.dataset.sf));
     });
     View1.build();
   }
 
   function setTrack(v) {
-    DS.state.trackFilter = v;
+    const tf = DS.state.trackFilter;
+    if (tf.has(v) && tf.size === 1) return; // keep at least one selected
+    tf.has(v) ? tf.delete(v) : tf.add(v);
+    document.querySelectorAll('[data-tf]').forEach(b => {
+      b.classList.toggle('active', tf.has(b.dataset.tf));
+    });
     View1.build();
-    // Re-render panel so track buttons reflect new state
-    const container = getEl('left-content', 'LeftV1');
-    if (container) render(container, DS.state.subview);
   }
 
   function setColorMode(v) {
     DS.state.colorMode = v;
-    document.querySelectorAll('.cb-btn').forEach(b => {
-      const label = b.textContent.toLowerCase().replace(/\s+/g, '');
-      b.classList.toggle('active', label === v.replace(/\s+/g, ''));
+    document.querySelectorAll('[data-cm]').forEach(b => {
+      b.classList.toggle('active', b.dataset.cm === v);
     });
     View1.setColorMode && View1.setColorMode(v);
   }
@@ -328,8 +525,8 @@ const LeftV1 = (() => {
     const list = document.getElementById(listId);
     const chevron = headerEl.querySelector('.lv1-chevron');
     if (!list) { Logger.warn('LeftV1', `toggleSection: list #${listId} not found`); return; }
-    const isOpen = list.style.display !== 'none';
-    list.style.display = isOpen ? 'none' : 'block';
+    const isOpen = list.classList.contains('open');
+    list.classList.toggle('open', !isOpen);
     if (chevron) chevron.classList.toggle('open', !isOpen);
   }
 
@@ -343,24 +540,24 @@ const LeftV1 = (() => {
 
   /* ── Reset functions ─────────────────────────────────────────────────── */
   function resetScholars() {
-    DS.state.statusFilter = 'current';
-    DS.state.trackFilter = 'all';
+    DS.state.statusFilter = new Set(['current']);
+    DS.state.trackFilter  = new Set(['research_faculty']);
     View1.build();
     const container = getEl('left-content', 'LeftV1');
     if (container) render(container, DS.state.subview);
   }
 
   function resetUnits() {
-    DS.state.hiddenUnits.clear();
-    View1.build();
-    const container = getEl('left-content', 'LeftV1');
-    if (container) render(container, DS.state.subview);
+    DS.state.unitFilter = new Set();
+    DS.state.legendFilter = new Set();
+    View1.clearTopicHighlight && View1.clearTopicHighlight();
   }
 
   function resetCollabFilter() {
-    DS.state.yearFrom = 1990;
+    DS.state.yearFrom = 1980;
     DS.state.yearTo = 2026;
-    DS.state.threshold = 1;
+    DS.state._yearSingleMode = false;
+    DS.state.threshold = 0;
     View1.build();
     const container = getEl('left-content', 'LeftV1');
     if (container) render(container, DS.state.subview);
@@ -370,6 +567,7 @@ const LeftV1 = (() => {
     DS.state.colorMode = 'college';
     DS.state.showLabels = true;
     DS.state.showEdgeClick = false;
+    DS.state.showIsolated = false;
     View1.setColorMode && View1.setColorMode('college');
     View1.render && View1.render();
     const container = getEl('left-content', 'LeftV1');
@@ -386,7 +584,7 @@ const LeftV1 = (() => {
   return {
     render,
     setStatus, setTrack, setColorMode, toggleEdgeClick,
-    toggleSection, toggleAdvanced,
+    toggleSection, toggleAdvanced, syncLegendState,
     resetScholars, resetUnits, resetCollabFilter, resetDisplay,
   };
 })();

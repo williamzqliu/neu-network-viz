@@ -35,13 +35,17 @@ const DrawerV1 = (() => {
   /* ── layout skeleton ─────────────────────────────────────────────────── */
   function _buildLayout(subview) {
     const ts     = SUMMARY.timeseries || [];
+    // Use second-to-last entry as "latest" (last year often incomplete)
     const latest = ts[ts.length - 2] || ts[ts.length - 1] || {};
 
-    const scholars = SCHOLARS.length;
-    const active   = SCHOLARS.filter(s => s.status === 'current').length;
-    const isolated = SCHOLARS.filter(s => s.is_isolated).length;
-    const bridges  = SCHOLARS.filter(s => s.is_bridge).length;
-    const isolPct  = scholars ? Math.round(isolated / scholars * 100) : 0;
+    const scholars  = SCHOLARS.length;
+    const active    = SCHOLARS.filter(s => s.status === 'current').length;
+    const isolated  = SCHOLARS.filter(s => s.is_isolated).length;
+    const bridges   = SCHOLARS.filter(s => s.is_bridge).length;
+    const isolPct   = scholars ? Math.round(isolated / scholars * 100) : 0;
+    const totalWorks = latest.total_works || 0;
+    const activePairs = latest.active_collab_pairs || 0;
+    const latestYear  = latest.year || '';
 
     return `
       <div class="dv1-layout">
@@ -54,9 +58,19 @@ const DrawerV1 = (() => {
             <div class="dv1-stat-sub">${active.toLocaleString()} active</div>
           </div>
           <div class="dv1-stat-card">
-            <div class="dv1-stat-label">COLLABORATIONS</div>
+            <div class="dv1-stat-label">COLLAB PAIRS</div>
             <div class="dv1-stat-value">${EDGES.length.toLocaleString()}</div>
-            <div class="dv1-stat-sub">co-authorship pairs</div>
+            <div class="dv1-stat-sub">unique co-author pairs</div>
+          </div>
+          <div class="dv1-stat-card">
+            <div class="dv1-stat-label">ACTIVE PAIRS ${latestYear}</div>
+            <div class="dv1-stat-value">${activePairs.toLocaleString()}</div>
+            <div class="dv1-stat-sub">pairs active that year</div>
+          </div>
+          <div class="dv1-stat-card">
+            <div class="dv1-stat-label">TOTAL WORKS</div>
+            <div class="dv1-stat-value">${totalWorks.toLocaleString()}</div>
+            <div class="dv1-stat-sub">publications by ${latestYear}</div>
           </div>
           <div class="dv1-stat-card">
             <div class="dv1-stat-label">ISOLATED</div>
@@ -73,11 +87,11 @@ const DrawerV1 = (() => {
         <!-- Charts row -->
         <div class="dv1-charts-row">
           <div class="dv1-chart-block dv1-chart-wide">
-            <div class="dv1-chart-title">Collaboration Growth (1990–2025)</div>
+            <div class="dv1-chart-title">COLLABORATION GROWTH (1990–2025)</div>
             <svg id="dv1-timeline" class="dv1-chart-svg" width="100%"></svg>
           </div>
           <div class="dv1-chart-block">
-            <div class="dv1-chart-title">Scholars by College</div>
+            <div class="dv1-chart-title">SCHOLARS BY COLLEGE</div>
             <svg id="dv1-college-bar" class="dv1-chart-svg" width="100%"></svg>
           </div>
         </div>
@@ -179,6 +193,65 @@ const DrawerV1 = (() => {
       .attr('stroke', 'var(--gold)').attr('stroke-width', 1).attr('stroke-dasharray', '3 2');
     legend.append('text').attr('x', 18).attr('y', 21)
       .text('New pairs').attr('font-size', 'var(--fs-chart-anno)').attr('fill', 'var(--text3)');
+
+    // ── Hover interaction ──────────────────────────────────────────────────
+    const crosshair = g.append('line')
+      .attr('class', 'dv1-crosshair')
+      .attr('y1', 0).attr('y2', iH)
+      .attr('stroke', 'var(--text3)').attr('stroke-width', 1)
+      .attr('stroke-dasharray', '3 2')
+      .attr('opacity', 0).attr('pointer-events', 'none');
+
+    const dotActive = g.append('circle').attr('r', 3.5)
+      .attr('fill', 'var(--red)').attr('stroke', '#fff').attr('stroke-width', 1.5)
+      .attr('opacity', 0).attr('pointer-events', 'none');
+
+    const dotNew = g.append('circle').attr('r', 3)
+      .attr('fill', 'var(--gold)').attr('stroke', '#fff').attr('stroke-width', 1.5)
+      .attr('opacity', 0).attr('pointer-events', 'none');
+
+    // Tooltip div (reuse or create)
+    let tipEl = document.getElementById('dv1-timeline-tip');
+    if (!tipEl) {
+      tipEl = document.createElement('div');
+      tipEl.id = 'dv1-timeline-tip';
+      tipEl.style.cssText = `position:fixed;pointer-events:none;background:var(--surface);
+        border:1px solid var(--border);border-radius:5px;padding:6px 10px;
+        font-size:var(--fs-body);color:var(--text2);box-shadow:0 2px 8px rgba(0,0,0,.1);
+        opacity:0;transition:opacity .1s;z-index:200;white-space:nowrap`;
+      document.body.appendChild(tipEl);
+    }
+
+    const bisect = d3.bisector(d => d.year).center;
+
+    svg.append('rect')
+      .attr('fill', 'none').attr('pointer-events', 'all')
+      .attr('x', pad.left).attr('y', pad.top).attr('width', iW).attr('height', iH)
+      .on('mousemove', function(event) {
+        const [mx] = d3.pointer(event, g.node());
+        const year = xScale.invert(mx);
+        const i = bisect(ts, year);
+        const d = ts[i];
+        if (!d) return;
+
+        const cx = xScale(d.year);
+        crosshair.attr('x1', cx).attr('x2', cx).attr('opacity', 0.6);
+        dotActive.attr('cx', cx).attr('cy', yScale(d.active_collab_pairs)).attr('opacity', 1);
+        dotNew.attr('cx', cx).attr('cy', yScale(d.new_collab_pairs)).attr('opacity', 1);
+
+        tipEl.innerHTML = `<b style="font-size:var(--fs-h3)">${d.year}</b><br>
+          <span style="color:var(--red)">● Active pairs: <b>${d.active_collab_pairs.toLocaleString()}</b></span><br>
+          <span style="color:var(--gold)">● New pairs: <b>${d.new_collab_pairs.toLocaleString()}</b></span>`;
+        tipEl.style.opacity = '1';
+        tipEl.style.left = (event.clientX + 14) + 'px';
+        tipEl.style.top  = (event.clientY - 54) + 'px';
+      })
+      .on('mouseleave', function() {
+        crosshair.attr('opacity', 0);
+        dotActive.attr('opacity', 0);
+        dotNew.attr('opacity', 0);
+        tipEl.style.opacity = '0';
+      });
   }
 
   /* ── College bar chart ───────────────────────────────────────────────── */

@@ -60,7 +60,7 @@ const View3 = (() => {
     const dir1 = new Set(nbrs1.map(x => x.id));
     const egoIds = new Set([centerId, ...dir1]);
 
-    if (hops === 2) {
+    if (currentHops === 2) {
       nbrs1.forEach(x => {
         (DS.adjacency.get(x.id) || []).forEach(y => egoIds.add(y.id));
       });
@@ -91,7 +91,7 @@ const View3 = (() => {
     const wScale = d3.scaleSqrt().domain([1, maxW]).range([0.5, 4]).clamp(true);
 
     // Hop rings
-    const ringR = hops === 1 ? [170] : [140, 270];
+    const ringR = currentHops === 1 ? [170] : [140, 270];
     ringR.forEach((r, i) => {
       g.append('circle').attr('cx', W / 2).attr('cy', H / 2).attr('r', r)
         .attr('fill', 'none').attr('stroke', DS.getColor(center.college))
@@ -179,7 +179,8 @@ const View3 = (() => {
     DS.state.selectedId = centerId;
     LeftV3.showEgoProfile(centerId);
     RightV3.showStats && RightV3.showStats(centerId);
-    document.getElementById('view-v3').querySelectorAll('.vs-btn').forEach(b =>
+    const v3sw = document.getElementById('view-switcher-v3');
+    if (v3sw) v3sw.querySelectorAll('.vs-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.subview === 'ego'));
   }
 

@@ -145,10 +145,20 @@ const Search = (() => {
       return;
     }
 
-    // Default: v1 — check visibility first
+    // Default: v1 — auto-enable filters if scholar is hidden
     if (!DS.state.visibleIds.has(id)) {
-      showHint(`"${s?.name}" is currently hidden by active filters.`);
-      return;
+      const sf = DS.state.statusFilter;
+      const tf = DS.state.trackFilter;
+      if (!sf.has(s.status)) sf.add(s.status);
+      if (s.track && !tf.has(s.track)) tf.add(s.track);
+      // Sync left panel button states
+      document.querySelectorAll('[data-sf]').forEach(b => b.classList.toggle('active', sf.has(b.dataset.sf)));
+      document.querySelectorAll('[data-tf]').forEach(b => b.classList.toggle('active', tf.has(b.dataset.tf)));
+      // Enable showIsolated — scholar may have no connections under current filter
+      DS.state.showIsolated = true;
+      const isoBtn = document.getElementById('lv1-btn-isolated');
+      if (isoBtn) isoBtn.classList.add('active');
+      View1.build && View1.build();
     }
 
     if (view !== 'v1') switchView('v1');

@@ -107,12 +107,14 @@ const DS = (() => {
     subview: 'collabmap',   // v1: 'collabmap'|'clusters'  v2: 'dept'|'center'|'compare'  v3: 'ego'|'collabmap'
 
     // --- Scholar filters (v1) ---
-    yearFrom: 1990,
+    yearFrom: 1980,
     yearTo: 2026,
-    threshold: 1,
-    statusFilter: 'current',     // 'all' | 'current' | 'no_retired' | 'former'
-    trackFilter: 'all',         // 'all' | 'research_faculty' | 'research_other' | 'teaching_clinical'
+    threshold: 0,
+    statusFilter: new Set(['current']),  // multi-select
+    trackFilter:  new Set(['research_faculty']),  // multi-select
     hiddenUnits: new Set(),     // unit_ids currently hidden by left panel filter
+    legendFilter: new Set(),    // college names currently highlighted via legend
+    unitFilter: new Set(),      // dept/center unit_ids currently highlighted
 
     // --- Display settings (v1) ---
     colorMode: 'college',     // 'college' | 'track' | 'community' | 'bridge'
@@ -154,14 +156,17 @@ const DS = (() => {
         return TRACK_COLORS[s.track] || '#999';
       case 'community': {
         const cid = s.community_id;
-        if (!cid) return '#aaaaaa';
+        if (cid == null) return '#aaaaaa';
         const h = (parseInt(cid) * 2654435761 >>> 0) % 360;
         return `hsl(${h},52%,50%)`;
       }
       case 'bridge': {
-        const bs = s.bridge_score || 0;
-        const t = Math.min(1, bs * 25);
-        return `rgb(${Math.round(30 + t * 170)},${Math.round(100 - t * 80)},${Math.round(200 - t * 170)})`;
+        // Color A (no bridge): #B8BDC9 = rgb(184,189,201)
+        // Color B (max bridge): #E0001E = rgb(224,0,30)
+        // Actual bridge_score range: ~0.70 (min) to ~1.41 (max)
+        if (!s.is_bridge || s.bridge_score == null) return '#B8BDC9';
+        const t = Math.max(0, Math.min(1, (s.bridge_score - 0.7) / 0.7));
+        return `rgb(${Math.round(184 + t * 40)},${Math.round(189 - t * 189)},${Math.round(201 - t * 171)})`;
       }
       default:
         return getColor(s.college);
@@ -173,10 +178,10 @@ const DS = (() => {
    */
   function getFilteredScholars() {
     return SCHOLARS.filter(s => {
-      if (state.statusFilter === 'current' && s.status !== 'current') return false;
-      if (state.statusFilter === 'no_retired' && s.status === 'retired') return false;
-      if (state.statusFilter === 'former' && s.status !== 'former') return false;
-      if (state.trackFilter !== 'all' && s.track !== state.trackFilter) return false;
+      const sf = state.statusFilter;
+      if (sf instanceof Set && sf.size < 3 && !sf.has(s.status)) return false;
+      const tf = state.trackFilter;
+      if (tf instanceof Set && tf.size < 3 && s.track && !tf.has(s.track)) return false;
       if (state.hiddenUnits.size > 0) {
         const mainId = s.main_affil_id;
         if (mainId && state.hiddenUnits.has(mainId)) return false;

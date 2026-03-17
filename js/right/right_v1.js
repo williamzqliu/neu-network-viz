@@ -34,7 +34,9 @@ const RightV1 = (() => {
   }
 
   /* ── showScholar: render full scholar card ───────────────────────────── */
-  function showScholar(id) {
+  // opts.card / opts.placeholder: alternate DOM targets (used by RightV3)
+  // opts.isV3: true → replace footer button with back-navigation
+  function showScholar(id, opts = {}) {
     Logger.info('RightV1', `showScholar id=${id}`);
 
     const s = DS.scholarMap.get(id);
@@ -44,8 +46,8 @@ const RightV1 = (() => {
       return;
     }
 
-    const placeholder = getEl('rv1-placeholder', 'RightV1');
-    const card = getEl('rv1-card', 'RightV1');
+    const placeholder = opts.placeholder || getEl('rv1-placeholder', 'RightV1');
+    const card        = opts.card        || getEl('rv1-card',        'RightV1');
     if (!card) return;
 
     if (placeholder) placeholder.style.display = 'none';
@@ -78,7 +80,9 @@ const RightV1 = (() => {
     // 圆点半径和圆环间距
     const R = 6;
     const gap = 4;
-    const rings = secondaryDepts.length;
+    // Gate ring rendering on multi_affil flag — consistent with canvas node rendering.
+    // Avoids spurious rings caused by name-string mismatches between scholars and scholar_detail.
+    const rings = s.multi_affil ? secondaryDepts.length : 0;
     const size = (R + rings * gap + (rings > 0 ? 2 : 0)) * 2 + 4;
     const cx = size / 2;
 
@@ -163,6 +167,15 @@ const RightV1 = (() => {
       ? `${iciTotal.toLocaleString()}<span style="font-size:var(--fs-h1);opacity:0.9"> / ${totalCit.toLocaleString()}</span>`
       : (totalCit != null ? totalCit.toLocaleString() : '—');
 
+    // Isolated reason label map
+    const ISOLATED_REASON_LABEL = {
+      'external_main':      'This scholar\'s collaborations are primarily with researchers outside Northeastern.',
+      'new_faculty':        'This scholar recently joined Northeastern and has not yet established internal collaborations.',
+      'practice_based':     'This scholar\'s work is primarily practice-based rather than co-authored research.',
+      'teaching_based':     'This scholar\'s role is primarily teaching-focused with limited research output.',
+      'source_unavailable': 'Collaboration data for this scholar is unavailable from current sources.',
+    };
+
     // Collaborators
     const nbrs = (DS.adjacency.get(id) || [])
       .filter(x => DS.scholarMap.has(x.id))
@@ -211,7 +224,10 @@ const RightV1 = (() => {
       ${qBadge}
     </div>
 
-    <div class="rp-role">${[s.role, s.status ? `<em>${s.status === 'current' ? 'Active' : s.status}</em>` : ''].filter(Boolean).join(' · ')}</div>
+    <div class="rp-role">${[
+      s.role || (s.admin_role ? s.admin_role.split(';').map(r => r.trim()).join(' · ') : ''),
+      s.status ? `<em>${s.status === 'current' ? 'Active' : s.status}</em>` : ''
+    ].filter(Boolean).join(' · ')}</div>
 
     ${bridgeHtml}
 
@@ -240,17 +256,31 @@ const RightV1 = (() => {
       </div>
     </div>
 
-    <div class="rp-collabs-header"><span style="color:var(--gold);font-weight:900">${nbrCount}</span> COLLABORATORS AT NEU</div>
-    <div class="rp-collabs-box${nbrs.length > 5 ? '' : ' no-border'}" id="rv1-collabs-${id}">${collabRows}</div>
+    ${nbrCount === 0
+      ? (() => {
+          const reason = det.isolated_reason;
+          const label  = (reason && ISOLATED_REASON_LABEL[reason]) || 'No recorded collaborations at Northeastern found in current data.';
+          return `<div class="rp-collabs-header">NO COLLABORATORS AT NEU</div>
+    <div class="rp-isolated-reason">${label}</div>`;
+        })()
+      : `<div class="rp-collabs-header"><span style="color:var(--gold);font-weight:900">${nbrCount}</span> COLLABORATORS AT NEU</div>
+    <div class="rp-collabs-box${nbrs.length > 5 ? '' : ' no-border'}" id="rv1-collabs-${id}">${collabRows}</div>`
+    }
 
     <div class="rp-interests-header">RESEARCH INTERESTS</div>
-    <div class="rv1-fields" id="rv1-fields-${id}">${fieldsHtml}</div>
+    ${fieldsHtml
+      ? `<div class="rv1-fields" id="rv1-fields-${id}">${fieldsHtml}</div>`
+      : `<div class="rp-isolated-reason">Insufficient publication data to infer research interests.</div>`
+    }
   </div>
 
   <div class="rv1-sticky-footer">
-    <button class="rp-explore-btn rv1-explore-btn" data-id="${id}">
-      Open Scholar Profile
-    </button>
+    ${opts.isV3
+      ? (DS.state.v3SourceView === 'v1'
+          ? `<button class="rp-explore-btn rv1-back-btn">← Back to University Network</button>`
+          : '')
+      : `<button class="rp-explore-btn rv1-explore-btn" data-id="${id}">Open Scholar Profile</button>`
+    }
     <div class="rp-data-note">
       Scholar data sourced from OpenAlex and ORCID.<br>
       Records may be incomplete or misattributed.
@@ -277,7 +307,7 @@ const RightV1 = (() => {
       });
     });
 
-    // Bind "Open Scholar Profile" button
+    // Bind footer button
     const exploreBtn = card.querySelector('.rv1-explore-btn');
     if (exploreBtn) {
       onTap(exploreBtn, () => {
@@ -285,6 +315,10 @@ const RightV1 = (() => {
         DS.state._pendingV3Id = id;
         switchView('v3');
       });
+    }
+    const backBtn = card.querySelector('.rv1-back-btn');
+    if (backBtn) {
+      onTap(backBtn, () => { goToCollabMap(); });
     }
   }
 

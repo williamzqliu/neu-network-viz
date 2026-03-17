@@ -11,7 +11,7 @@ const ViewCluster = (() => {
   // ── Interaction state ─────────────────────────────────────────────────────
   let isDragging = false, isRightDrag = false;
   let prevMouse = { x: 0, y: 0 };
-  let spherical = { theta: 0.4, phi: 0.6, radius: 1400 };
+  let spherical = { theta: 0.4, phi: 0.6, radius: 2400 };
   let panOffset = { x: 0, y: 0 };
   let touchState = null;
   let mouseDownPos = { x: 0, y: 0 };
@@ -150,7 +150,7 @@ const ViewCluster = (() => {
       let geo;
       if (n._type === 'bridge' || n._type === 'partial_bridge') {
         // True bipyramid: two cones sharing a common equatorial base
-        geo = makeBipyramidGeometry(r, r * 1.6, 8);
+        geo = makeBipyramidGeometry(r, r * 1.6, 4);
       } else {
         geo = new THREE.SphereGeometry(r, 32, 32);
       }
@@ -184,6 +184,130 @@ const ViewCluster = (() => {
 
       nodeMeshes.push({ mesh, glow, data: n });
       nodeMap.set(n.id, mesh);
+    });
+
+    // ── Bridge scholar repositioning ─────────────────────────────────────
+    // Build inward-direction map: average direction from each cluster toward its neighbors
+    const clusterInward = new Map();
+    CLUSTER_EDGES.forEach(e => {
+      const s = nodeMap.get(e.source), t = nodeMap.get(e.target);
+      if (!s || !t) return;
+      if (!clusterInward.has(e.source)) clusterInward.set(e.source, new THREE.Vector3());
+      if (!clusterInward.has(e.target)) clusterInward.set(e.target, new THREE.Vector3());
+      clusterInward.get(e.source).add(t.position.clone().sub(s.position).normalize());
+      clusterInward.get(e.target).add(s.position.clone().sub(t.position).normalize());
+    });
+    clusterInward.forEach(v => { if (v.length() > 0) v.normalize(); });
+
+    // Boundary circle: max distance of any community node from origin + its radius
+    let boundaryR = 0;
+    CLUSTER_NODES.community_nodes.forEach(n => {
+      const m = nodeMap.get(n.id);
+      if (!m) return;
+      const r2d = Math.sqrt(m.position.x * m.position.x + m.position.y * m.position.y);
+      boundaryR = Math.max(boundaryR, r2d + communityRadius(n.size));
+    });
+
+    // Group bridge/partial_bridge nodes by sorted connects key
+    const bridgeGroups = new Map();
+    [...CLUSTER_NODES.bridge_nodes, ...CLUSTER_NODES.partial_bridge_nodes].forEach(n => {
+      const mesh = nodeMap.get(n.id);
+      if (!mesh) return;
+      const key = (n.connects || []).slice().sort().join(',');
+      if (!key) return;
+      if (!bridgeGroups.has(key)) bridgeGroups.set(key, []);
+      bridgeGroups.get(key).push({ n, mesh });
+    });
+
+    bridgeGroups.forEach((group, key) => {
+      const connects = group[0].n.connects || [];
+      const clMeshes = connects.map(cid => nodeMap.get(cid)).filter(Boolean);
+      if (!clMeshes.length) return;
+
+      // Centroid of connected clusters (base anchor)
+      const base = new THREE.Vector3();
+      clMeshes.forEach(m => base.add(m.position));
+      base.divideScalar(clMeshes.length);
+
+      // Spread direction
+      let spreadDir = new THREE.Vector3();
+      if (connects.length === 1) {
+        // Single-connection: place on OUTWARD side (opposite to B's inward/neighbor direction)
+        const inward = clusterInward.get(connects[0]);
+        if (inward && inward.length() > 0.001) {
+          spreadDir.copy(inward).negate();
+        } else {
+          // No neighbor data: fall back to radial from origin
+          spreadDir.set(base.x, base.y, 0);
+        }
+      } else {
+        // Multi-connection: perpendicular to line between first two clusters
+        const m1 = nodeMap.get(connects[0]), m2 = nodeMap.get(connects[1]);
+        if (m1 && m2) {
+          const along = m2.position.clone().sub(m1.position);
+          along.z = 0;
+          spreadDir.set(-along.y, along.x, 0);
+        } else {
+          spreadDir.set(-base.y, base.x, 0);
+        }
+      }
+      spreadDir.z = 0;
+      if (spreadDir.length() < 0.001) spreadDir.set(1, 0, 0);
+      spreadDir.normalize();
+
+      const clNode = connects.length === 1
+        ? CLUSTER_NODES.community_nodes.find(c => c.id === connects[0]) : null;
+      const clR = clNode ? communityRadius(clNode.size) : 60;
+
+      const total = group.length;
+      const arcDeg = Math.min(90, 18 + total * 12);
+
+      group.forEach(({ n, mesh }, i) => {
+        const bR = n._type === 'bridge' ? bridgeRadius(n) : bridgeRadius(n) * 0.65;
+        const baseDist = connects.length === 1 ? clR + bR + 22 : 55 + bR * 1.4;
+
+        // Multi-connection: alternate both sides of perpendicular (symmetric spread)
+        // Single-connection: fan from inward direction
+        let angleDeg;
+        if (connects.length > 1) {
+          const side = (i % 2 === 0) ? 1 : -1;
+          const step = Math.floor(i / 2) + (i % 2 === 0 ? 0 : 0);
+          angleDeg = side * (Math.floor(i / 2) + 1) * (arcDeg / Math.max(total, 2))
+            + (((i * 7 + 3) % 11) - 5) * 1.8;  // ±9° jitter
+          if (i === 0) angleDeg = (((3) % 11) - 5) * 1.8; // centre with small jitter
+        } else {
+          const t = total === 1 ? 0 : (i / (total - 1) - 0.5) * 2;
+          angleDeg = t * arcDeg * 0.5 + (((i * 7 + 3) % 11) - 5) * 2.5;
+        }
+
+        const a = angleDeg * Math.PI / 180;
+        const cosA = Math.cos(a), sinA = Math.sin(a);
+        const rotDir = new THREE.Vector3(
+          spreadDir.x * cosA - spreadDir.y * sinA,
+          spreadDir.x * sinA + spreadDir.y * cosA,
+          0
+        );
+
+        // Radial jitter
+        const distJitter = 1 + ((i * 13 + 5) % 9) * 0.028;
+        const dist = baseDist * distJitter;
+
+        let nx = base.x + rotDir.x * dist;
+        let ny = base.y + rotDir.y * dist;
+
+        // Clamp to community boundary circle (multi-connection only)
+        if (connects.length > 1) {
+          const r2d = Math.sqrt(nx * nx + ny * ny);
+          if (r2d > boundaryR - bR - 8) {
+            const scale = (boundaryR - bR - 8) / r2d;
+            nx *= scale; ny *= scale;
+          }
+        }
+
+        mesh.position.set(nx, ny, mesh.position.z);
+        const entry = nodeMeshes.find(e => e.mesh === mesh);
+        if (entry) entry.glow.position.copy(mesh.position);
+      });
     });
 
     // Cluster edges
@@ -254,31 +378,70 @@ const ViewCluster = (() => {
       });
     });
 
-    // Labels — positioned outward from center (0,0,0)
+    // Labels — community: label_line2 only (larger), radially outward from plane center
+    //         bridge/peripheral: original radial offset from node center
     allData.forEach(n => {
       const mesh = nodeMap.get(n.id);
       if (!mesh) return;
-      // Skip partial_bridge labels to reduce clutter
       if (n._type === 'partial_bridge') return;
-      const sprite = makeTextSprite(n);
-      if (!sprite) return;
-      const r = n._type === 'community' ? communityRadius(n.size)
-        : n._type === 'peripheral' ? peripheralRadius(n.size)
-          : bridgeRadius(n);
 
-      // Direction from center (0,0,0) to node
       const pos = mesh.position.clone();
-      const dist = pos.length() || 1;
-      const dir = pos.clone().normalize();
+      // Outward direction in x-y plane (away from plane center / origin)
+      const outDir = new THREE.Vector3(pos.x, pos.y, 0);
+      if (outDir.length() < 1) outDir.set(1, 0, 0);
+      outDir.normalize();
 
-      // Place label just outside the node in the outward direction
-      const offset = r + 28;
-      sprite.position.set(
-        pos.x + dir.x * offset,
-        pos.y + dir.y * offset,
-        pos.z + dir.z * offset
-      );
+      let sprite;
+      if (n._type === 'community') {
+        sprite = makeSphereLabelSprite(n.label_line2 || n.label_line1 || '');
+        if (!sprite) return;
+        const r = communityRadius(n.size);
+        sprite.position.set(
+          pos.x + outDir.x * (r + 200),
+          pos.y + outDir.y * (r + 200),
+          pos.z
+        );
+      } else {
+        sprite = makeTextSprite(n);
+        if (!sprite) return;
+        const r = n._type === 'peripheral' ? peripheralRadius(n.size) : bridgeRadius(n);
+        const dir = pos.clone().normalize();
+        const offset = r + 28;
+        sprite.position.set(
+          pos.x + dir.x * offset,
+          pos.y + dir.y * offset,
+          pos.z + dir.z * offset
+        );
+      }
+
       sprite.userData = { nodeId: n.id };
+      scene.add(sprite);
+      labelSprites.push(sprite);
+    });
+
+    // Field labels — one per domain group, radially outward from group centroid
+    const domainCentroids = new Map();
+    allData.filter(n => n._type === 'community').forEach(n => {
+      const domain = DOMAIN_MAP[n.id] || 'Periphery';
+      const mesh = nodeMap.get(n.id);
+      if (!mesh) return;
+      if (!domainCentroids.has(domain)) domainCentroids.set(domain, { sum: new THREE.Vector3(), count: 0 });
+      const entry = domainCentroids.get(domain);
+      entry.sum.add(mesh.position);
+      entry.count++;
+    });
+
+    domainCentroids.forEach((entry, domain) => {
+      const cx = entry.sum.x / entry.count;
+      const cy = entry.sum.y / entry.count;
+      const cz = entry.sum.z / entry.count;
+      const sprite = makeFieldSprite(domain);
+      if (!sprite) return;
+      // Push outward from plane center in x-y, well beyond the group boundary
+      const outDir = new THREE.Vector3(cx, cy, 0);
+      if (outDir.length() < 1) outDir.set(1, 0, 0);
+      outDir.normalize();
+      sprite.position.set(cx + outDir.x * 400, cy + outDir.y * 400, cz);
       scene.add(sprite);
       labelSprites.push(sprite);
     });
@@ -306,6 +469,60 @@ const ViewCluster = (() => {
     return sprite;
   }
 
+  // ── Sphere label sprite (label_line2, word-wrapped, no truncation) ──────
+  function makeSphereLabelSprite(text) {
+    if (!text) return null;
+
+    const fontSize = 22;
+    const maxLineW = 180; // max canvas pixels per line (keeps label narrow)
+    const fontStr  = `${fontSize}px "DM Sans", sans-serif`;
+
+    // Measure text on a temp canvas for word-wrap
+    const tmp = document.createElement('canvas').getContext('2d');
+    tmp.font = fontStr;
+
+    const words = text.split(' ');
+    const lines  = [];
+    let cur = '';
+    for (const w of words) {
+      const test = cur ? cur + ' ' + w : w;
+      if (tmp.measureText(test).width > maxLineW && cur) {
+        lines.push(cur);
+        cur = w;
+      } else {
+        cur = test;
+      }
+    }
+    if (cur) lines.push(cur);
+
+    const lineH   = fontSize + 2;
+    const padX    = 16;
+    const padY    = 10;
+    const canvasW = maxLineW + padX * 2;
+    const canvasH = lines.length * lineH + padY * 2;
+
+    const c   = document.createElement('canvas');
+    c.width   = canvasW;
+    c.height  = canvasH;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, canvasW, canvasH);
+    ctx.font         = fontStr;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle    = '#FFFFFF';
+    ctx.globalAlpha  = 0.92;
+    lines.forEach((line, i) => ctx.fillText(line, canvasW / 2, padY + i * lineH));
+
+    const tex = new THREE.CanvasTexture(c);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+    const sprite = new THREE.Sprite(mat);
+    // Scene-space size: keep ~40px per line tall
+    const sceneH = lines.length * 32 + 12;
+    const sceneW = sceneH * (canvasW / canvasH);
+    sprite.scale.set(sceneW, sceneH, 1);
+    return sprite;
+  }
+
   // ── Text sprite ───────────────────────────────────────────────────────────
   function makeTextSprite(n) {
     const line1 = n.label_line1 || n.name || '';
@@ -319,7 +536,7 @@ const ViewCluster = (() => {
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
 
     // Line 1 — bold, large
-    ctx.font = 'bold 36px "DM Sans", sans-serif';
+    ctx.font = 'bold 48px "DM Sans", sans-serif';
     ctx.fillStyle = '#FFFFFF'; ctx.globalAlpha = 0.95;
     ctx.fillText(trunc(line1, 30), 384, 6);
 
@@ -333,7 +550,39 @@ const ViewCluster = (() => {
     const tex = new THREE.CanvasTexture(c);
     const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
     const sprite = new THREE.Sprite(mat);
-    sprite.scale.set(360, 53, 1);
+    sprite.scale.set(460, 68, 1);
+    return sprite;
+  }
+
+  // ── Field label sprite (one per domain group) ───────────────────────────
+  const DOMAIN_DISPLAY = {
+    CS: 'Computer Science',
+    Engineering: 'Engineering',
+    LifeSci: 'Life Sciences',
+    Medicine: 'Medicine',
+    Social: 'Social Sciences',
+    Business: 'Business',
+    Periphery: 'Other',
+  };
+
+  function makeFieldSprite(domain) {
+    const label = DOMAIN_DISPLAY[domain] || domain;
+    const hex   = DOMAIN_HEX[domain] || '#90A4AE';
+
+    const c = document.createElement('canvas');
+    c.width = 768; c.height = 90;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = 'bold 52px "DM Sans", sans-serif';
+    ctx.fillStyle = hex;
+    ctx.globalAlpha = 0.92;
+    ctx.fillText(label, 384, 45);
+
+    const tex = new THREE.CanvasTexture(c);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(480, 56, 1);
     return sprite;
   }
 
@@ -434,8 +683,8 @@ const ViewCluster = (() => {
         panOffset.y += dy * s;
       } else {
         // Orbit — drag right rotates right, drag up tilts up (phi decreases)
-        spherical.theta -= dx * 0.010;
-        spherical.phi = Math.max(0.05, Math.min(Math.PI / 2, spherical.phi - dy * 0.008));
+        spherical.theta = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, spherical.theta - dx * 0.010));
+        spherical.phi = Math.max(0.05, Math.min(Math.PI - 0.05, spherical.phi - dy * 0.008));
       }
       prevMouse = { x: e.clientX, y: e.clientY };
     }
@@ -470,7 +719,7 @@ const ViewCluster = (() => {
 
   function onWheel(e) {
     e.preventDefault();
-    spherical.radius = Math.max(300, Math.min(3500, spherical.radius + e.deltaY * 0.8));
+    spherical.radius = Math.max(10, spherical.radius + e.deltaY * 0.8);
   }
 
   function onTouchStart(e) {
@@ -495,12 +744,12 @@ const ViewCluster = (() => {
     if (e.touches.length === 1 && isDragging) {
       const dx = e.touches[0].clientX - prevMouse.x;
       const dy = e.touches[0].clientY - prevMouse.y;
-      spherical.theta -= dx * 0.010;
-      spherical.phi = Math.max(0.05, Math.min(Math.PI / 2, spherical.phi - dy * 0.008));
+      spherical.theta = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, spherical.theta - dx * 0.010));
+      spherical.phi = Math.max(0.05, Math.min(Math.PI - 0.05, spherical.phi - dy * 0.008));
       prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
     } else if (e.touches.length === 2 && touchState) {
       const nd = touchDist(e);
-      spherical.radius = Math.max(300, Math.min(3500, touchState.radius * touchState.dist / nd));
+      spherical.radius = Math.max(10, touchState.radius * touchState.dist / nd);
       const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
       const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
       const s = spherical.radius * 0.001;
@@ -764,8 +1013,8 @@ const ViewCluster = (() => {
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
-  function zoomIn() { spherical.radius = Math.max(300, spherical.radius * 0.75); }
-  function zoomOut() { spherical.radius = Math.min(3500, spherical.radius * 1.35); }
+  function zoomIn() { spherical.radius = Math.max(10, spherical.radius * 0.75); }
+  function zoomOut() { spherical.radius = spherical.radius * 1.35; }
   function zoomReset() {
     spherical = { theta: 0.4, phi: 0.6, radius: 1400 };
     panOffset = { x: 0, y: 0 };

@@ -32,11 +32,27 @@ const View1 = (() => {
   let transform = d3.zoomIdentity;
   let hoveredId = null;
   let hoveredEdge = null;
+  let selectedEdge = null;
   let zoomBehavior;
   let hlAlpha = 0;
   let hlAlphaTarget = 0;
   let hasInitialZoomed = false;
   let defaultTransform = null;   // saved after first layout, used by zoomReset
+
+  let _isoArr = [];    // unpositioned isolated scholars (stored during build)
+  let _isoNodes = [];  // positioned isolated scholars (set by _layoutIsoNodes)
+  const ISO_R = 5.5;   // render radius for isolated nodes on canvas
+  let _top10BridgeIds = new Set(); // top 10 bridge scholars by score (for bold label)
+  let _bridgeP75 = 0;             // 75th-percentile bridge score threshold
+
+  // Layout cache: avoids re-running force simulation for identical filter states
+  const _layoutCache = new Map(); // cacheKey → { isoNodes, nodePositions: Map<id,{x,y}> }
+  function _cacheKey() {
+    const s = DS.state;
+    const sf = s.statusFilter instanceof Set ? [...s.statusFilter].sort().join(',') : s.statusFilter;
+    const tf = s.trackFilter  instanceof Set ? [...s.trackFilter].sort().join(',')  : s.trackFilter;
+    return `${sf}|${tf}|${s.yearFrom}|${s.yearTo}|${s.threshold}|${W}|${H}`;
+  }
 
   const rScale = d3.scaleSqrt().range([3, 14]);
   const wScale = d3.scaleSqrt().range([0.3, 3.5]);
@@ -97,6 +113,7 @@ const View1 = (() => {
     canvas.height = cssH * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (simulation) simulation.force('center', d3.forceCenter(W / 2, H / 2));
+    if (DS.state.showIsolated && _isoArr.length) _layoutIsoNodes(_isoArr);
     render();
   }
 
@@ -131,20 +148,46 @@ const View1 = (() => {
     if (ovCollabs) ovCollabs.textContent = allEdges.length.toLocaleString();
     if (ovIsolated) ovIsolated.textContent = isoNodes.length.toLocaleString();
 
-    _renderIsolatedZone(isoNodes);
+    // Store iso scholars for ring layout; hide legacy DOM zone
+    _isoArr = isoNodes;
+    _isoNodes = [];
+    const isoZone = document.getElementById('isolated-zone');
+    if (isoZone) isoZone.style.display = 'none';
 
-    // Build simulation nodes (preserve positions)
+    // Restore from layout cache if available
+    const cacheKey = _cacheKey();
+    const cached = _layoutCache.get(cacheKey);
+    if (cached) {
+      _isoNodes = cached.isoNodes;  // iso nodes appear immediately from cache
+    }
+
+    // Build simulation nodes (prefer: current pos → cached pos → random)
     const prevMap = nodes ? new Map(nodes.map(n => [n.id, n])) : new Map();
     nodes = connNodes.map(s => {
       const prev = prevMap.get(s.id);
+      const cp   = cached?.nodePositions?.get(s.id);
       return {
         ...s,
-        x: prev?.x ?? W / 2 + (Math.random() - 0.5) * 240,
-        y: prev?.y ?? H / 2 + (Math.random() - 0.5) * 240,
+        x: prev?.x ?? cp?.x ?? W / 2 + (Math.random() - 0.5) * 240,
+        y: prev?.y ?? cp?.y ?? H / 2 + (Math.random() - 0.5) * 240,
         fx: prev?.fx ?? null,
         fy: prev?.fy ?? null,
       };
     });
+
+    // Pre-compute iso positions immediately so Show Isolated is always instant.
+    // Uses current (possibly unsettled) node positions for a rough layout;
+    // simulation 'end' will recompute with settled positions.
+    if (!cached && _isoArr.length) _layoutIsoNodes(_isoArr);
+
+    // Pre-compute bridge label tiers (top 10 bold; p75 threshold for font size)
+    const bridgeSorted = [...nodes, ..._isoNodes]
+      .filter(n => n.bridge_score > 0)
+      .sort((a, b) => b.bridge_score - a.bridge_score);
+    _top10BridgeIds = new Set(bridgeSorted.slice(0, 10).map(n => n.id));
+    _bridgeP75 = bridgeSorted.length
+      ? bridgeSorted[Math.floor(bridgeSorted.length * 0.25)].bridge_score
+      : 0;
 
     links = allEdges.map(e => ({ ...e }));
 
@@ -169,8 +212,18 @@ const View1 = (() => {
       .alphaDecay(0.025)
       .on('tick', render)
       .on('end', () => {                    // fire once when simulation cools down
-        //hasInitialZoomed = false;           // reset so initialZoom can run
-        //initialZoom();                      // auto-fit after layout stabilizes
+        _layoutIsoNodes(_isoArr);  // always pre-compute; render() will decide whether to show
+        // Save positions to cache so next load with same filters is instant
+        _layoutCache.set(_cacheKey(), {
+          isoNodes: _isoNodes,
+          nodePositions: new Map(nodes.map(n => [n.id, { x: n.x, y: n.y }])),
+        });
+        render();
+        // Pre-warm cache for retired/former in background (only when viewing 'all')
+        if (DS.state.statusFilter instanceof Set && DS.state.statusFilter.size === 3) {
+          setTimeout(() => _prewarmCache('retired'), 200);
+          setTimeout(() => _prewarmCache('former'),  200);
+        }
       });
 
     if (DS.state.frozen) simulation.stop();
@@ -252,14 +305,16 @@ const View1 = (() => {
         const s = link.source, t = link.target;
         if (!s?.x || !t?.x) return;
 
-        if (isTopicMode) {
-          if (s.id !== selId && t.id !== selId) return;
+        if (isTopicMode && !selectedEdge) {
+          const sHL = topicHL && topicHL.has(s.id);
+          const tHL = topicHL && topicHL.has(t.id);
+          if (s.id !== selId && t.id !== selId && !(sHL && tHL)) return;
         }
 
         const isFocus = focusId && (s.id === focusId || t.id === focusId);
-        const isTopHL = topicHL && (topicHL.has(s.id) || topicHL.has(t.id));
+        const isTopHL = !!(topicHL && topicHL.has(s.id) && topicHL.has(t.id));
         const isFaded = hasHL && !isFocus && !isTopHL;
-        const isHovEdge = hoveredEdge === link;
+        const isHovEdge = hoveredEdge === link || selectedEdge === link;
 
         ctx.beginPath();
         ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y);
@@ -296,9 +351,9 @@ ctx.beginPath();
 ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
 ctx.globalAlpha = isFaded ? dimmedAlpha : isTopConnected ? 0.35 : (isActive ? 0.98 : 0.55);
 if (node.status === 'retired' || node.status === 'former') {
-  ctx.globalAlpha = 0.4;
+  ctx.globalAlpha = isFaded ? dimmedAlpha : 0.4;
   ctx.strokeStyle = col;
-  ctx.lineWidth = 1 / transform.k;
+  ctx.lineWidth = 1.25 / transform.k;
   ctx.stroke();
 } else {
   ctx.fillStyle = col;
@@ -324,13 +379,13 @@ if (node.status === 'retired' || node.status === 'former') {
           ctx.globalAlpha = 1;
         }
 
-        // Bridge halo
-        if (node.is_bridge && !isFaded) {
+        // Bridge halo (suppressed when topic match ring will also be drawn)
+        if (node.is_bridge && !isFaded && !isTopMatch) {
           const topPct = node.top_pct || 25;
-          const haloR = topPct <= 1 ? 8 : topPct <= 3 ? 6 : topPct <= 5 ? 5 : 4;
+          const haloR = topPct <= 1 ? 3.5 : topPct <= 3 ? 3 : topPct <= 5 ? 2.5 : 2;
           const haloA = topPct <= 1 ? 0.7 : topPct <= 3 ? 0.55 : topPct <= 5 ? 0.42 : 0.28;
           ctx.beginPath();
-          ctx.arc(node.x, node.y, r + haloR / transform.k, 0, Math.PI * 2);
+          ctx.arc(node.x, node.y, r * 1.3 + haloR / transform.k, 0, Math.PI * 2);
           ctx.strokeStyle = '#A4804A';
           ctx.lineWidth = (topPct <= 3 ? 1.2 : 0.8) / transform.k;
           ctx.globalAlpha = haloA;
@@ -341,7 +396,7 @@ if (node.status === 'retired' || node.status === 'former') {
         // Topic match ring（未连接符合条件）
         if (isTopMatch && !isSel) {
           ctx.beginPath();
-          ctx.arc(node.x, node.y, r + 4 / transform.k, 0, Math.PI * 2);
+          ctx.arc(node.x, node.y, r * 1.3 + 2.5 / transform.k, 0, Math.PI * 2);
           ctx.strokeStyle = '#A4804A';
           ctx.lineWidth = 1.2 / transform.k;
           ctx.globalAlpha = 0.7;
@@ -363,10 +418,69 @@ if (node.status === 'retired' || node.status === 'former') {
 
         // Label
         if (DS.state.showLabels && transform.k > 0.7 && !isFaded) {
+          const isBridgeMode = DS.state.colorMode === 'bridge';
+          if (isBridgeMode && !(node.bridge_score > 0)) {
+            // no label for zero-score nodes in bridge mode
+          } else {
+            const isTop10 = isBridgeMode && _top10BridgeIds.has(node.id);
+            const isTop25 = isBridgeMode && (node.bridge_score >= _bridgeP75);
+            const weight = isTop10 ? '700' : '400';
+            const fontSize = (isTop10 ? 14 : isBridgeMode && !isTop25 ? 10 : 12) / transform.k;
+            const alpha = isBridgeMode && !isTop25 ? 0.6 : isTop10 ? 0.9 : 0.75;
+            ctx.fillStyle = '#3D4460';
+            ctx.font = `${weight} ${fontSize}px 'DM Sans',sans-serif`;
+            ctx.globalAlpha = alpha;
+            const label = isBridgeMode
+              ? node.bridge_score.toFixed(3)
+              : node.name.split(' ').pop();
+            ctx.fillText(label, node.x + r + 3 / transform.k, node.y);
+            ctx.globalAlpha = 1;
+          }
+        }
+      });
+    }
+
+    // Isolated nodes — ring layout, rendered after main nodes
+    // Hidden when threshold >= 1 (they have 0 collabs and would always be filtered)
+    if (DS.state.showIsolated && DS.state.threshold < 1 && _isoNodes.length) {
+      _isoNodes.forEach(node => {
+        if (node.x == null) return;
+        const col = DS.nodeColor(node);
+
+        // Iso nodes have no neighbors — fade all of them when anything else is focused,
+        // except the iso node that is itself selected
+        const isSel = node.id === selId;
+        const isHov = node.id === hovId;
+        const isTopMatch = topicHL && topicHL.has(node.id);
+        const isFaded = hasHL && !isSel && !isHov && !isTopMatch;
+
+        if (isSel || isHov) { ctx.shadowColor = col; ctx.shadowBlur = 8 / transform.k; }
+
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, ISO_R, 0, Math.PI * 2);
+        if (node.status === 'retired' || node.status === 'former') {
+          ctx.globalAlpha = isFaded ? dimmedAlpha : 0.4;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 1.25 / transform.k;
+          ctx.stroke();
+        } else {
+          ctx.globalAlpha = isFaded ? dimmedAlpha : 0.5;
+          ctx.fillStyle = col;
+          ctx.fill();
+          ctx.globalAlpha = isFaded ? dimmedAlpha * 0.6 : 0.3;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 0.8 / transform.k;
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+
+        // Label — only when zoomed in enough (iso nodes are small, avoid clutter)
+        if (DS.state.showLabels && transform.k > 0.7 && !isFaded) {
           ctx.fillStyle = '#4f5673';
           ctx.font = `${12 / transform.k}px 'DM Sans',sans-serif`;
-          ctx.globalAlpha = 0.75;
-          ctx.fillText(node.name.split(' ').pop(), node.x + r + 3 / transform.k, node.y);
+          ctx.globalAlpha = 0.7;
+          ctx.fillText(node.name.split(' ').pop(), node.x + ISO_R + 3 / transform.k, node.y + ISO_R * 0.4);
           ctx.globalAlpha = 1;
         }
       });
@@ -377,15 +491,23 @@ if (node.status === 'retired' || node.status === 'former') {
 
   /* ── Hit tests ───────────────────────────────────────────────────────── */
   function _hitTest(mx, my) {
-    if (!nodes) return null;
+    if (!nodes && !_isoNodes.length) return null;
     const [wx, wy] = transform.invert([mx, my]);
     let best = null, bestD = Infinity;
-    nodes.forEach(n => {
+    (nodes || []).forEach(n => {
       const r = rScale(n.h_index || 0) + 4;
       const dx = n.x - wx, dy = n.y - wy;
       const d2 = dx * dx + dy * dy;
       if (d2 < r * r && d2 < bestD) { bestD = d2; best = n; }
     });
+    if (DS.state.showIsolated && DS.state.threshold < 1) {
+      _isoNodes.forEach(n => {
+        const r = ISO_R + 4;
+        const dx = n.x - wx, dy = n.y - wy;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < r * r && d2 < bestD) { bestD = d2; best = n; }
+      });
+    }
     return best;
   }
 
@@ -413,11 +535,23 @@ if (node.status === 'retired' || node.status === 'former') {
   function _handleTap(mx, my) {
     const n = _hitTest(mx, my);
     if (n) {
+      selectedEdge = null;
       DS.state.selectedId = n.id;
-      DS.state.topicHighlight = null;
-      DS.state.topicConnected = null;
       hoveredEdge = null;
-      _hideBadge();
+
+      if (DS.state.colorMode === 'community' && n.community_id != null) {
+        // Highlight all scholars in the same Leiden community
+        const cid = n.community_id;
+        const memberIds = new Set(SCHOLARS.filter(s => s.community_id === cid).map(s => s.id));
+        DS.state.topicHighlight = memberIds;
+        DS.state.topicConnected = null;
+        _showBadge(`Community ${cid} · ${memberIds.size} scholars`, DS.nodeColor(n));
+      } else {
+        DS.state.topicHighlight = null;
+        DS.state.topicConnected = null;
+        _hideBadge();
+      }
+
       animateHL(1);
       render();
       Panels.showScholarCard(n.id);
@@ -426,6 +560,7 @@ if (node.status === 'retired' || node.status === 'former') {
         const selId = DS.state.selectedId;
         const rawE = _edgeHitTest(mx, my);
         if (rawE && (rawE.source.id === selId || rawE.target.id === selId)) return;
+        selectedEdge = null;
         DS.state.selectedId = null;
         DS.state.topicHighlight = null;
         DS.state.topicConnected = null;
@@ -439,6 +574,7 @@ if (node.status === 'retired' || node.status === 'former') {
       }
       const e = DS.state.showEdgeClick ? _edgeHitTest(mx, my) : null;
       if (e) {
+        selectedEdge = e;
         DS.state.selectedId = null;
         DS.state.topicHighlight = new Set([e.source.id, e.target.id]);
         DS.state.topicConnected = null;
@@ -451,6 +587,7 @@ if (node.status === 'retired' || node.status === 'former') {
         render();
         RightV1.reset && RightV1.reset(DS.state.subview);
       } else {
+        selectedEdge = null;
         DS.state.selectedId = null;
         DS.state.topicHighlight = null;
         DS.state.topicConnected = null;
@@ -529,7 +666,8 @@ if (node.status === 'retired' || node.status === 'former') {
   }
 
   function panTo(id) {
-    const n = nodes && nodes.find(x => x.id === id);
+    let n = nodes && nodes.find(x => x.id === id);
+    if (!n) n = _isoNodes.find(x => x.id === id);
     if (!n?.x) return;
     const scale = Math.max(transform.k, 1.5);
     const t = d3.zoomIdentity
@@ -601,6 +739,7 @@ if (node.status === 'retired' || node.status === 'former') {
   function clearTopicHighlight() {
     DS.state.topicHighlight = null;
     DS.state.legendFilter = new Set();
+    DS.state.unitFilter = new Set();
     DS.state.selectedId = null;
     animateHL(0);
     render();
@@ -610,6 +749,7 @@ if (node.status === 'retired' || node.status === 'former') {
     const clearBtn = document.getElementById('hd-search-clear');
     if (inputEl) inputEl.value = '';
     if (clearBtn) clearBtn.style.display = 'none';
+    LeftV1.syncLegendState && LeftV1.syncLegendState();
   }
 
   /* ── Legend ──────────────────────────────────────────────────────────── */
@@ -619,11 +759,28 @@ if (node.status === 'retired' || node.status === 'former') {
     const mode = DS.state.colorMode;
 
     if (mode === 'college') {
+      const _legendOrder = [
+        'Bouve College of Health Sciences',
+        'College of Arts, Media and Design',
+        'College of Engineering',
+        'College of Professional Studies',
+        'College of Science',
+        'College of Social Sciences & Humanities',
+        "D'Amore-McKim School of Business",
+        'Khoury College of Computer Sciences',
+        'School of Law',
+        'Mills College at Northeastern',
+        'Northeastern University London',
+        'Other',
+      ];
       const colleges = [...new Set(SCHOLARS.map(s => s.college).filter(Boolean))]
         .sort((a, b) => {
-          if (a === 'Other') return 1;
-          if (b === 'Other') return -1;
-          return a.localeCompare(b);
+          const ai = _legendOrder.indexOf(a);
+          const bi = _legendOrder.indexOf(b);
+          if (ai === -1 && bi === -1) return a.localeCompare(b);
+          if (ai === -1) return 1;
+          if (bi === -1) return -1;
+          return ai - bi;
         });
       grid.innerHTML = colleges.map(c => {
         const isActive = DS.state.legendFilter && DS.state.legendFilter.has(c);
@@ -631,7 +788,7 @@ if (node.status === 'retired' || node.status === 'former') {
   data-college="${c.replace(/"/g, '&quot;')}">
   <div class="legend-dot" style="background:${DS.getColor(c)}"></div>
   ${DS.getShortName(c)}
-  ${c === 'Other' ? `<span class="info-icon" data-tip="Scholars whose primary affiliation is not mapped to a specific college — typically research centers or other affiliated units.">?</span>` : ''}
+  ${c === 'Other' ? `<span class="info-icon" data-tip="Scholars whose primary affiliation is not mapped to a specific college, typically research centers or other affiliated units.">?</span>` : ''}
 </div>`;
       }).join('');
       // Bind taps
@@ -647,66 +804,276 @@ if (node.status === 'retired' || node.status === 'former') {
         </div>`).join('');
     } else if (mode === 'bridge') {
       grid.innerHTML = `
-        <div class="legend-item"><div class="legend-dot" style="background:rgb(30,100,200)"></div>Low bridge</div>
-        <div class="legend-item"><div class="legend-dot" style="background:rgb(200,20,30)"></div>High bridge</div>`;
-    } else {
-      grid.innerHTML = `<div class="legend-item" style="color:var(--text3);font-size:var(--fs-xs)">120 communities</div>`;
+        <div class="legend-item"><div class="legend-dot" style="background:#B8BDC9"></div>No bridge score</div>
+        <div class="legend-item" style="grid-column:1/-1;flex-direction:column;align-items:flex-start;gap:3px">
+          <div style="display:flex;align-items:center;gap:7px">
+            <div style="width:90px;height:7px;border-radius:3px;background:linear-gradient(to right,#B8BDC9,#E0001E);flex-shrink:0"></div>
+            <span>bridge score</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;width:90px;font-size:10px;color:var(--text3)">
+            <span>Low</span><span>High</span>
+          </div>
+        </div>`;
+    } else if (mode === 'community') {
+      const sel = DS.state.selectedId ? DS.scholarMap.get(DS.state.selectedId) : null;
+      if (sel && sel.community_id != null && DS.state.topicHighlight) {
+        const col = DS.nodeColor(sel);
+        grid.innerHTML = `<div class="legend-item" style="grid-column:1/-1">
+          <div class="legend-dot" style="background:${col}"></div>
+          Community ${sel.community_id} · ${DS.state.topicHighlight.size} scholars
+        </div>`;
+      } else {
+        grid.innerHTML = `<div class="legend-item" style="grid-column:1/-1;white-space:normal;color:var(--text3)">Click any node to highlight its community</div>`;
+      }
     }
   }
 
-  function toggleLegendFilter(college) {
-    if (!DS.state.legendFilter) DS.state.legendFilter = new Set();
+  /* ── Shared highlight engine ─────────────────────────────────────────── */
+  function _applyUnitHighlight() {
     const lf = DS.state.legendFilter;
+    const uf = DS.state.unitFilter;
+    const hasFilter = lf.size > 0 || uf.size > 0;
 
-    lf.has(college) ? lf.delete(college) : lf.add(college);
-
-    if (lf.size === 0) {
+    if (!hasFilter) {
       DS.state.topicHighlight = null;
-      clearTopicHighlight();
-    } else {
-      const ids = SCHOLARS.filter(s => lf.has(s.college)).map(s => s.id);
-      DS.state.topicHighlight = new Set(ids);
-      const label = [...lf].join(', ');
-      const col = lf.size === 1 ? DS.getColor([...lf][0]) : 'var(--gold)';
-      _showBadge(`${label} · ${ids.length} scholars`, col);
-      animateHL(1);
-      fitToNodes(ids);
-    }
-
-    render();
-    renderLegend();
-  }
-
-  /* ── Isolated zone ───────────────────────────────────────────────────── */
-  function _renderIsolatedZone(isoNodes) {
-    const zone = document.getElementById('isolated-zone');
-    if (!zone) return;
-
-    if (!DS.state.showIsolated || isoNodes.length === 0) {
-      zone.style.display = 'none';
+      animateHL(0);
+      _hideBadge();
+      render();
+      renderLegend();
+      LeftV1.syncLegendState && LeftV1.syncLegendState();
       return;
     }
 
-    zone.style.display = 'block';
-    const countEl = document.getElementById('iso-count');
-    const list = document.getElementById('iso-list');
-    if (countEl) countEl.textContent = isoNodes.length;
-    if (list) {
-      list.innerHTML = isoNodes
-        .sort((a, b) => (b.h_index || 0) - (a.h_index || 0))
-        .slice(0, 80)
-        .map(s => {
-          const col = DS.getColor(s.college);
-          return `<div class="iso-chip" data-sid="${s.id}">
-            <div class="iso-chip-dot" style="background:${col}"></div>
-            ${s.name.split(' ').pop()}
-          </div>`;
-        }).join('');
+    const ids = SCHOLARS
+      .filter(s => {
+        if (lf.has(s.college)) return true;
+        for (const uid of uf) {
+          const unit = DS.unitMap.get(uid);
+          if (!unit) continue;
+          if (unit.unit_type === 'center') {
+            const detail = SCHOLAR_DETAIL && SCHOLAR_DETAIL[s.id];
+            if (detail && detail.ctr_names && detail.ctr_names.includes(unit.unit_name)) return true;
+          } else {
+            if (s.main_affil_id === uid) return true;
+          }
+        }
+        return false;
+      })
+      .map(s => s.id);
+    DS.state.topicHighlight = new Set(ids);
 
-      list.querySelectorAll('.iso-chip').forEach(chip => {
-        onTap(chip, () => selectById(chip.dataset.sid));
+    // Badge label: college short names + any extra units not covered by a selected college
+    const extraUf = [...uf].filter(uid => {
+      const u = DS.unitMap.get(uid);
+      if (!u) return false;
+      if (u.unit_type === 'department' && u.parent_unit_id) {
+        const parent = DS.unitMap.get(u.parent_unit_id);
+        return !(parent && lf.has(parent.unit_name));
+      }
+      return true; // centers are always "extra"
+    });
+    const parts = [];
+    if (lf.size > 0) parts.push([...lf].map(c => DS.getShortName(c)).join(', '));
+    if (extraUf.length > 0) parts.push(`+${extraUf.length} unit${extraUf.length !== 1 ? 's' : ''}`);
+    const col = (lf.size === 1 && extraUf.length === 0) ? DS.getColor([...lf][0]) : 'var(--gold)';
+    _showBadge(`${parts.join(' ')} · ${ids.length} scholars`, col);
+
+    animateHL(1);
+    fitToNodes(ids);
+    render();
+    renderLegend();
+    LeftV1.syncLegendState && LeftV1.syncLegendState();
+  }
+
+  function toggleLegendFilter(college) {
+    const lf = DS.state.legendFilter;
+    const uf = DS.state.unitFilter;
+
+    // Find this college's dept IDs to sync unitFilter
+    const colUnit = UNITS.find(u => u.unit_name === college && u.unit_type === 'college');
+    const deptIds = colUnit ? (DS.collegeDepts.get(colUnit.unit_id) || []).map(d => d.unit_id) : [];
+
+    if (lf.has(college)) {
+      lf.delete(college);
+      deptIds.forEach(id => uf.delete(id));
+    } else {
+      lf.add(college);
+      deptIds.forEach(id => uf.add(id));
+    }
+
+    _applyUnitHighlight();
+  }
+
+  function toggleUnitFilter(unitId) {
+    const uf = DS.state.unitFilter;
+    const lf = DS.state.legendFilter;
+
+    uf.has(unitId) ? uf.delete(unitId) : uf.add(unitId);
+
+    // Sync parent college's legendFilter based on whether all its depts are selected
+    const unit = DS.unitMap.get(unitId);
+    if (unit && unit.unit_type === 'department' && unit.parent_unit_id) {
+      const parentCollege = DS.unitMap.get(unit.parent_unit_id);
+      if (parentCollege) {
+        const allDeptIds = (DS.collegeDepts.get(unit.parent_unit_id) || []).map(d => d.unit_id);
+        const allSelected = allDeptIds.length > 0 && allDeptIds.every(id => uf.has(id));
+        allSelected ? lf.add(parentCollege.unit_name) : lf.delete(parentCollege.unit_name);
+      }
+    }
+
+    _applyUnitHighlight();
+  }
+
+  /* ── Isolated node scatter layout (annular zone + collision detection) ── */
+  /* ── Background cache pre-warmer ─────────────────────────────────────── */
+  function _prewarmCache(statusFilter) {
+    const s = DS.state;
+    const tf = s.trackFilter instanceof Set ? [...s.trackFilter].sort().join(',') : s.trackFilter;
+    const key = `${statusFilter}|${tf}|${s.yearFrom}|${s.yearTo}|${s.threshold}|${W}|${H}`;
+    if (_layoutCache.has(key)) return; // already cached
+
+    // Compute filtered scholars for the target status
+    const tfSet = s.trackFilter instanceof Set ? s.trackFilter : null;
+    const allScholars = SCHOLARS.filter(sc => {
+      if (sc.status !== statusFilter) return false;
+      if (tfSet && tfSet.size < 3 && sc.track && !tfSet.has(sc.track)) return false;
+      return true;
+    });
+    const nodeSet = new Set(allScholars.map(sc => sc.id));
+    const allEdges = DS.getFilteredEdges(nodeSet);
+    const activeIds = new Set();
+    allEdges.forEach(e => { activeIds.add(e.source); activeIds.add(e.target); });
+
+    const bgConn = allScholars.filter(sc => activeIds.has(sc.id));
+    const bgIso  = allScholars.filter(sc => !activeIds.has(sc.id));
+
+    if (!bgConn.length && !bgIso.length) return;
+
+    const bgNodes = bgConn.map(sc => ({
+      ...sc,
+      x: W / 2 + (Math.random() - 0.5) * 240,
+      y: H / 2 + (Math.random() - 0.5) * 240,
+    }));
+    const bgLinks = allEdges.map(e => ({ ...e }));
+
+    const bgMaxH = d3.max(bgNodes, d => d.h_index || 1) || 1;
+    const bgRScale = d3.scaleSqrt().range([3, 14]).domain([0, bgMaxH]);
+
+    // Run simulation without rendering; higher alphaDecay for faster convergence
+    const bgSim = d3.forceSimulation(bgNodes)
+      .force('link', d3.forceLink(bgLinks).id(d => d.id).distance(200).strength(0.45))
+      .force('charge', d3.forceManyBody().strength(-120))
+      .force('x', d3.forceX(W / 2).strength(0.04))
+      .force('y', d3.forceY(H / 2).strength(0.04))
+      .force('collide', d3.forceCollide(d => bgRScale(d.h_index || 0) + 6))
+      .alphaDecay(0.05)   // faster than main sim (0.025) to reduce background CPU
+      .stop();
+
+    // Run synchronously in idle chunks to avoid blocking UI
+    const totalTicks = Math.ceil(Math.log(0.001) / Math.log(1 - 0.05));
+    let tick = 0;
+    function runChunk() {
+      const end = Math.min(tick + 30, totalTicks);
+      while (tick < end) { bgSim.tick(); tick++; }
+      if (tick < totalTicks) {
+        requestIdleCallback ? requestIdleCallback(runChunk) : setTimeout(runChunk, 16);
+      } else {
+        // Compute iso layout using settled bgNodes centroid
+        const bgCx = d3.mean(bgNodes, n => n.x) ?? W / 2;
+        const bgCy = d3.mean(bgNodes, n => n.y) ?? H / 2;
+        let bgNetR = 0;
+        bgNodes.forEach(n => {
+          const d = Math.sqrt((n.x - bgCx) ** 2 + (n.y - bgCy) ** 2);
+          if (d > bgNetR) bgNetR = d;
+        });
+        const INNER_R = bgNetR + 70, BAND_W = 420, MIN_D = ISO_R * 2 + 14;
+        const MIN_D2 = MIN_D * MIN_D;
+        let seed = 42;
+        const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+        const bgIsoNodes = [];
+        bgIso.forEach(sc => {
+          let placed = false;
+          for (let t = 0; t < 60 && !placed; t++) {
+            const r = INNER_R + rand() * BAND_W, angle = rand() * Math.PI * 2;
+            const x = bgCx + Math.cos(angle) * r, y = bgCy + Math.sin(angle) * r;
+            let ok = true;
+            for (let j = bgIsoNodes.length - 1; j >= 0 && ok; j--) {
+              const dx = bgIsoNodes[j].x - x, dy = bgIsoNodes[j].y - y;
+              if (dx * dx + dy * dy < MIN_D2) ok = false;
+            }
+            if (ok) { bgIsoNodes.push({ ...sc, x, y }); placed = true; }
+          }
+          if (!placed) {
+            bgIsoNodes.push({ ...sc,
+              x: bgCx + Math.cos(rand() * Math.PI * 2) * (INNER_R + BAND_W + rand() * 80),
+              y: bgCy + Math.sin(rand() * Math.PI * 2) * (INNER_R + BAND_W + rand() * 80),
+            });
+          }
+        });
+
+        _layoutCache.set(key, {
+          isoNodes: bgIsoNodes,
+          nodePositions: new Map(bgNodes.map(n => [n.id, { x: n.x, y: n.y }])),
+        });
+      }
+    }
+    requestIdleCallback ? requestIdleCallback(runChunk) : setTimeout(runChunk, 500);
+  }
+
+  function _layoutIsoNodes(isoArr) {
+    if (!isoArr || !isoArr.length || !W || !H) { _isoNodes = []; return; }
+
+    // Compute actual centroid + bounding radius of settled connected nodes
+    let netR = 0, netCx = W / 2, netCy = H / 2;
+    if (nodes && nodes.length > 0) {
+      netCx = d3.mean(nodes, n => n.x) ?? W / 2;
+      netCy = d3.mean(nodes, n => n.y) ?? H / 2;
+      nodes.forEach(n => {
+        const d = Math.sqrt((n.x - netCx) ** 2 + (n.y - netCy) ** 2);
+        if (d > netR) netR = d;
       });
     }
+
+    const INNER_R = netR + 70;        // inner edge of scatter zone (gap from network)
+    const BAND_W  = 420;              // radial width; wider = sparser, more natural
+    const MIN_D   = ISO_R * 2 + 14;  // minimum center-to-center distance (collision radius)
+    const MIN_D2  = MIN_D * MIN_D;
+    const TRIES   = 60;               // attempts per node before overflow fallback
+
+    // Seeded LCG — same input always produces same layout (deterministic)
+    let seed = 42;
+    const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+
+    const positioned = [];
+
+    isoArr.forEach(scholar => {
+      let placed = false;
+
+      for (let t = 0; t < TRIES && !placed; t++) {
+        const r     = INNER_R + rand() * BAND_W;
+        const angle = rand() * Math.PI * 2;
+        const x     = netCx + Math.cos(angle) * r;
+        const y     = netCy + Math.sin(angle) * r;
+
+        // Check collision against all previously placed nodes
+        // (iterate backwards for early exit near recently placed nodes)
+        let ok = true;
+        for (let j = positioned.length - 1; j >= 0 && ok; j--) {
+          const dx = positioned[j].x - x, dy = positioned[j].y - y;
+          if (dx * dx + dy * dy < MIN_D2) ok = false;
+        }
+        if (ok) { positioned.push({ ...scholar, x, y }); placed = true; }
+      }
+
+      // Overflow fallback: place beyond band, no collision check
+      if (!placed) {
+        const r     = INNER_R + BAND_W + rand() * 80;
+        const angle = rand() * Math.PI * 2;
+        positioned.push({ ...scholar, x: netCx + Math.cos(angle) * r, y: netCy + Math.sin(angle) * r });
+      }
+    });
+
+    _isoNodes = positioned;
   }
 
   /* ── Zoom controls ───────────────────────────────────────────────────── */
@@ -717,8 +1084,10 @@ if (node.status === 'retired' || node.status === 'former') {
     DS.state.topicHighlight = null;
     DS.state.legendFilter = new Set();
     hoveredEdge = null;
+    selectedEdge = null;
     animateHL(0);
     renderLegend();
+    LeftV1.syncLegendState && LeftV1.syncLegendState();
     _hideBadge();
     clearSearch();
     RightV1.reset && RightV1.reset(DS.state.subview);
@@ -740,7 +1109,7 @@ if (node.status === 'retired' || node.status === 'former') {
     DS.state.showIsolated = !DS.state.showIsolated;
     const btn = document.getElementById('lv1-btn-isolated');
     if (btn) btn.classList.toggle('active', DS.state.showIsolated);
-    build();
+    render();
   }
 
   function toggleFreeze() {
@@ -763,7 +1132,15 @@ if (node.status === 'retired' || node.status === 'former') {
   }
 
   function setColorMode(mode) {
+    const prev = DS.state.colorMode;
     DS.state.colorMode = mode;
+    // Clear community highlight when entering or leaving community mode
+    if (prev === 'community' || mode === 'community') {
+      DS.state.topicHighlight = null;
+      DS.state.topicConnected = null;
+      animateHL(DS.state.selectedId ? 1 : 0);
+      _hideBadge();
+    }
     renderLegend();
     render();
   }
@@ -850,9 +1227,9 @@ if (node.status === 'retired' || node.status === 'former') {
     init, build, resize, render, initialZoom,
     selectById, focusNode, panTo,
     highlightTopic, clearTopicHighlight,
-    toggleLegendFilter, renderLegend,
+    toggleLegendFilter, toggleUnitFilter, renderLegend,
     zoomIn, zoomOut, zoomReset,
-    toggleLabels, toggleIsolated, toggleFreeze,
+    toggleLabels, toggleIsolated,
     setForceCharge, setForceLink, setColorMode,
   };
 })();
