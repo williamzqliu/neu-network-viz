@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Research Collaboration Network — Northeastern University</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+  <!-- Loading screen -->
+  <div id="loading">
+    <div class="load-inner">
+      <div class="load-logo">
+        <svg width="40" height="40" viewBox="0 0 22 22" fill="none">
+          <circle cx="11" cy="11" r="9.5" stroke="#C8102E" stroke-width="1.2" stroke-dasharray="3 2.5" opacity="0.5" />
+          <circle cx="11" cy="11" r="5.5" stroke="#C8102E" stroke-width="1.2" />
+          <circle cx="11" cy="11" r="2" fill="#C8102E" />
+        </svg>
+      </div>
+      <div class="load-title">Research Collaboration Network</div>
+      <div class="load-inst">NORTHEASTERN UNIVERSITY</div>
+      <div class="load-bar-wrap">
+        <div id="load-bar"></div>
+      </div>
+      <div id="load-msg">Loading data...</div>
+    </div>
+  </div>
+
+  <!-- App shell (hidden until DOMContentLoaded) -->
+  <div id="app" style="display:none">
+
+    <!-- Screen size warning overlay -->
+    <div id="size-overlay">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+        stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="3" width="20" height="14" rx="2" />
+        <line x1="8" y1="21" x2="16" y2="21" />
+        <line x1="12" y1="17" x2="12" y2="21" />
+      </svg>
+      <p>Please resize your browser to at least <strong>1280 x 740px</strong> for the best experience.</p>
+    </div>
+
+    <!-- ── Header ──────────────────────────────────────────────────────────── -->
+    <header id="header">
+
+      <!-- Brand + feedback link -->
+      <div id="hd-brand">
+        <div id="hd-logo">
+          <svg width="28" height="28" viewBox="0 0 22 22" fill="none">
+            <circle cx="11" cy="11" r="9.5" stroke="#C8102E" stroke-width="1.2" stroke-dasharray="3 2.5"
+              opacity="0.5" />
+            <circle cx="11" cy="11" r="5.5" stroke="#C8102E" stroke-width="1.2" />
+            <circle cx="11" cy="11" r="2" fill="#C8102E" />
+          </svg>
+        </div>
+        <div>
+          <div class="hd-t1">Research Collaboration Network</div>
+          <div class="hd-t2">NORTHEASTERN UNIVERSITY</div>
+        </div>
+        <a id="hd-feedback" href="https://forms.gle/a8QaMCJ8svCSE4qU6" target="_blank" rel="noopener">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
+            <polyline points="15,3 21,3 21,9" />
+            <line x1="10" y1="14" x2="21" y2="3" />
+          </svg>
+          Share Feedback
+        </a>
+      </div>
+
+      <!-- Search bar (absolutely centered in header) -->
+      <div id="hd-search-wrap">
+        <svg class="hd-search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="7" />
+          <line x1="16.5" y1="16.5" x2="22" y2="22" />
+        </svg>
+        <input id="hd-search" type="text" placeholder="Search scholars or research topics..." autocomplete="off"
+          spellcheck="false">
+        <button id="hd-search-clear" style="display:none" onclick="clearSearch()">x</button>
+      </div>
+
+      <!-- Primary navigation
+           v1 = University Network  (formerly "Scholar Network")
+           v2 = Unit Collaboration  (unchanged)
+           v3 = Scholar Profile     (formerly "Individual View")
+      -->
+      <nav id="hd-nav">
+        <button class="nav-tab active" data-view="v1" onclick="switchView('v1')">
+          <span class="nav-tab-label" data-text="University Network">University Network</span>
+        </button>
+        <button class="nav-tab" data-view="v2" onclick="switchView('v2')">
+          <span class="nav-tab-label" data-text="Unit Collaboration">Unit Collaboration</span>
+        </button>
+        <button class="nav-tab" data-view="v3" onclick="switchView('v3')">
+          <span class="nav-tab-label" data-text="Scholar Profile">Scholar Profile</span>
+        </button>
+        <div class="nav-divider"></div>
+        <button class="nav-tab" data-view="credits" onclick="switchView('credits')">
+          <span class="nav-tab-label" data-text="Credits">Credits</span>
+        </button>
+      </nav>
+
+    </header>
+
+    <!-- Search overlay (positioned below header, above canvas) -->
+    <div id="search-overlay" style="display:none">
+      <div id="search-box">
+        <div id="search-hint" style="display:none"></div>
+        <div id="search-results"></div>
+      </div>
+    </div>
+
+    <!-- ── Main 3-column layout ─────────────────────────────────────────── -->
+    <div id="layout">
+
+      <!-- Left panel -->
+      <aside id="panel-left">
+        <div id="left-content"></div>
+      </aside>
+
+      <!-- Central canvas area -->
+      <main id="canvas-area">
+
+        <!-- ── V1: University Network ───────────────────────────────────── -->
+        <div id="view-v1" class="view active">
+
+          <!-- Data overview bar (top-left of canvas) -->
+          <div id="data-overview">
+            <div id="data-stats">
+              <span><b id="ov-scholars">--</b> scholars</span>
+              <span><b id="ov-collabs">--</b> collabs</span>
+              <span><b id="ov-isolated">--</b> isolated</span>
+            </div>
+            <!-- Topic / selection badge -->
+            <div id="topic-badge">
+              <span id="topic-badge-text"></span>
+              <button id="topic-badge-clear" onclick="View1.clearTopicHighlight()">x</button>
+            </div>
+          </div>
+
+          <!-- Force-directed canvas -->
+          <canvas id="v1-canvas"></canvas>
+
+          <!-- Research Clusters container (hidden by default) -->
+          <div id="vc-container" style="position:absolute;inset:0;width:100%;height:100%;display:none"></div>
+
+          <!-- Sub-view switcher (top-right of canvas)
+               data-subview values must match DS.state.subview strings:
+               'collabmap' | 'clusters'
+          -->
+          <div id="view-switcher-v1">
+            <button class="vs-btn active" data-subview="collabmap" onclick="switchSubView('collabmap')">
+              <span class="vs-btn-label">Collaboration Map</span>
+            </button>
+            <button class="vs-btn" data-subview="clusters" onclick="switchSubView('clusters')">
+              <span class="vs-btn-label">Research Clusters</span>
+            </button>
+          </div>
+
+          <!-- Zoom controls (bottom-right) -->
+          <div id="canvas-controls">
+            <button class="cc-btn" onclick="v1ZoomIn()" title="Zoom in">
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"
+                stroke-linecap="round">
+                <line x1="6" y1="2" x2="6" y2="10" />
+                <line x1="2" y1="6" x2="10" y2="6" />
+              </svg>
+            </button>
+            <button class="cc-btn" onclick="v1ZoomOut()" title="Zoom out">
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"
+                stroke-linecap="round">
+                <line x1="2" y1="6" x2="10" y2="6" />
+              </svg>
+            </button>
+            <button class="cc-btn" onclick="v1ZoomReset()" title="Reset zoom">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2">
+                <circle cx="6" cy="6" r="5" />
+                <circle cx="6" cy="6" r="1.5" fill="currentColor" stroke="none" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Legend (bottom-left) -->
+          <div id="canvas-bottom-left">
+            <div id="legend-box">
+              <div class="legend-title">LEGEND</div>
+              <div id="legend-grid"></div>
+            </div>
+          </div>
+
+          <!-- Isolated scholars zone (shown when Show Isolated is active) -->
+          <div id="isolated-zone" style="display:none">
+            <div class="iso-header">Isolated scholars <span id="iso-count">0</span></div>
+            <div id="iso-list"></div>
+          </div>
+
+          <!-- University Overview drawer (bottom, resizable) -->
+          <div id="univ-drawer">
+
+            <!-- Drag handle / title bar — always visible -->
+            <div id="drawer-resize-handle">
+              <button id="univ-drawer-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round">
+                  <polyline points="18,15 12,9 6,15" />
+                </svg>
+                UNIVERSITY OVERVIEW
+              </button>
+
+              <!-- Centered grip indicator -->
+              <div id="drawer-grip">
+                <span></span>
+              </div>
+
+              <!-- Right-side controls -->
+              <!-- <div id="drawer-controls">
+                <button class="drawer-ctrl-btn" id="drawer-btn-default"
+                  title="Default height" onclick="DrawerManager.snapDefault()">&#9633;</button>
+                <button class="drawer-ctrl-btn" id="drawer-btn-max"
+                  title="Full height" onclick="DrawerManager.snapMax()">&#8679;</button>
+                <button class="drawer-ctrl-btn" id="drawer-btn-close"
+                  title="Collapse" onclick="DrawerManager.close()">&#8681;</button>
+              </div> -->
+            </div>
+
+            <!-- Scrollable content -->
+            <div id="univ-drawer-content">
+              <div id="univ-drawer-inner"></div>
+            </div>
+
+          </div>
+
+        </div><!-- /view-v1 -->
+
+        <!-- ── V2: Unit Collaboration ───────────────────────────────────── -->
+        <div id="view-v2" class="view">
+
+          <!-- SVG canvas for hexagonal unit layout -->
+          <div id="v2-wrap" style="position:absolute;inset:0;width:100%;height:100%">
+            <svg id="v2-svg" style="width:100%;height:100%"></svg>
+          </div>
+
+          <!-- Sub-view switcher (top-right)
+               data-subview: 'dept' | 'center' | 'compare'
+          -->
+          <div id="view-switcher-v2">
+            <button class="vs-btn active" data-subview="dept" onclick="setUnitMode('dept')">
+              <span class="vs-btn-label">Departments</span>
+            </button>
+            <button class="vs-btn" data-subview="center" onclick="setUnitMode('center')">
+              <span class="vs-btn-label">Research Centers</span>
+            </button>
+            <button class="vs-btn" data-subview="compare" onclick="setUnitMode('compare')">
+              <span class="vs-btn-label">Compare</span>
+            </button>
+          </div>
+
+        </div><!-- /view-v2 -->
+
+        <!-- ── V3: Scholar Profile ──────────────────────────────────────── -->
+        <div id="view-v3" class="view">
+
+          <!-- Empty state (shown when no scholar is selected) -->
+          <div id="v3-placeholder" class="view-placeholder" style="position:absolute;inset:0;display:flex;flex-direction:column;
+                   align-items:center;justify-content:center;gap:12px">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" opacity=".2">
+              <circle cx="24" cy="24" r="6" stroke="#C8102E" stroke-width="2" />
+              <circle cx="24" cy="24" r="14" stroke="#C8102E" stroke-width="1.2" stroke-dasharray="4 3" />
+              <circle cx="24" cy="24" r="21" stroke="#C8102E" stroke-width="1" stroke-dasharray="2 4" />
+            </svg>
+            <p style="color:var(--text3);font-size:var(--fs-small);text-align:center">
+              Scholar Profile<br>
+              <span style="font-size:var(--fs-xs)">Select a scholar from the University Network to explore</span>
+            </p>
+          </div>
+
+          <!-- Ego network SVG (shown after a scholar is selected) -->
+          <svg id="v3-svg" style="position:absolute;inset:0;width:100%;height:100%;display:none"></svg>
+
+          <!-- Sub-view switcher (top-right)
+               data-subview: 'ego' | 'collabmap'
+               'ego'       = show ego network (default)
+               'collabmap' = return to University Network and highlight this scholar
+          -->
+          <div id="view-switcher-v3">
+            <button class="vs-btn" data-subview="collabmap" onclick="goToCollabMap()">
+              <span class="vs-btn-label">Collaboration Map</span>
+            </button>
+            <button class="vs-btn active" data-subview="ego">
+              <span class="vs-btn-label">Ego Network</span>
+            </button>
+          </div>
+
+        </div><!-- /view-v3 -->
+
+      </main>
+
+      <!-- ── Right panel ────────────────────────────────────────────────── -->
+      <!-- Three separate placeholder/card pairs, one per view.
+           Panels.update() shows/hides the correct pair via CSS display.
+           Only the active view's pair is ever visible.
+      -->
+      <aside id="panel-right">
+
+        <!-- V1: University Network right panel -->
+        <div id="rp-v1" class="rp-view active">
+          <div id="rv1-placeholder">
+            <!-- Default overview — rendered by RightV1.reset() -->
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" opacity=".18">
+              <circle cx="16" cy="16" r="13" stroke="currentColor" stroke-width="1.5" />
+              <circle cx="16" cy="12" r="4" stroke="currentColor" stroke-width="1.5" />
+              <path d="M8 26c0-4.4 3.6-8 8-8s8 3.6 8 8" stroke="currentColor" stroke-width="1.5" />
+            </svg>
+            <p>Select a scholar<br>to view profile</p>
+          </div>
+          <div id="rv1-card" style="display:none">
+            <!-- Scholar card — rendered by RightV1.showScholar() -->
+          </div>
+        </div>
+
+        <!-- V2: Unit Collaboration right panel -->
+        <div id="rp-v2" class="rp-view">
+          <div id="rv2-placeholder">
+            <!-- Default overview — rendered by RightV2.reset() -->
+          </div>
+          <div id="rv2-card" style="display:none">
+            <!-- Unit card — rendered by RightV2.showUnit() -->
+          </div>
+        </div>
+
+        <!-- V3: Scholar Profile right panel -->
+        <div id="rp-v3" class="rp-view">
+          <div id="rv3-placeholder">
+            <!-- Default prompt — rendered by RightV3.reset() -->
+          </div>
+          <div id="rv3-card" style="display:none">
+            <!-- Ego stats — rendered by RightV3.showStats() -->
+          </div>
+        </div>
+
+      </aside>
+
+    </div><!-- /layout -->
+
+    <!-- ── Tutorial overlay (entry screen) ──────────────────────────────── -->
+    <div id="tutorial-overlay">
+      <div id="tutorial-card">
+        <div class="tut-logo">
+          <svg width="52" height="52" viewBox="0 0 22 22" fill="none">
+            <circle cx="11" cy="11" r="9.5" stroke="#C8102E" stroke-width="1.2" stroke-dasharray="3 2.5"
+              opacity="0.5" />
+            <circle cx="11" cy="11" r="5.5" stroke="#C8102E" stroke-width="1.2" />
+            <circle cx="11" cy="11" r="2" fill="#C8102E" />
+          </svg>
+        </div>
+        <h1 class="tut-title">Research Collaboration Network</h1>
+        <p class="tut-inst">NORTHEASTERN UNIVERSITY</p>
+        <p class="tut-desc">
+          An interactive visualization of intra-university co-authorship networks,
+          designed for meta-scientific exploration of collaboration patterns.
+        </p>
+        <button id="tut-enter-btn" onclick="enterApp()">Enter</button>
+        <p class="tut-note">Data sourced from OpenAlex and ORCID</p>
+      </div>
+    </div>
+
+    <!-- ── Credits overlay ───────────────────────────────────────────────── -->
+    <div id="credits-overlay">
+      <div id="credits-card">
+        <div class="tut-logo">
+          <svg width="52" height="52" viewBox="0 0 22 22" fill="none">
+            <circle cx="11" cy="11" r="9.5" stroke="#C8102E" stroke-width="1.2" stroke-dasharray="3 2.5"
+              opacity="0.5" />
+            <circle cx="11" cy="11" r="5.5" stroke="#C8102E" stroke-width="1.2" />
+            <circle cx="11" cy="11" r="2" fill="#C8102E" />
+          </svg>
+        </div>
+        <h1 class="tut-title">Research Collaboration Network</h1>
+        <p class="tut-inst">NORTHEASTERN UNIVERSITY</p>
+        <div class="credits-section">
+          <p class="credits-role">DATA ANALYSIS AND DESIGN</p>
+          <p class="credits-name" onclick="window.open('https://williamzqliu.com/','_blank')">Zhuoqi Liu</p>
+        </div>
+        <div class="credits-divider"></div>
+        <div class="credits-section">
+          <p class="credits-role">SPECIAL THANKS</p>
+          <p class="credits-name" onclick="window.open('https://dakotamurray.me/','_blank')">Dakota Murray</p>
+          <p class="credits-name" onclick="window.open('https://www.nabeelgillani.com/','_blank')">Nabeel Gillani</p>
+          <p class="credits-name"
+            onclick="window.open('https://www.networkscienceinstitute.org/people/alina-lungeanu','_blank')">
+            Alina Lungeanu
+          </p>
+        </div>
+        <button id="credits-back-btn" onclick="closeCredits()">Go Back</button>
+      </div>
+    </div>
+
+  </div><!-- /app -->
+
+  <!-- Global tooltip (rendered by views on hover) -->
+  <div id="tooltip"></div>
+
+  <!-- ── Data files (global variables, must load first) ──────────────────── -->
+  <script src="data/summary.js"></script>
+  <script src="data/scholars.js"></script>
+  <script src="data/scholar_detail.js"></script>
+  <script src="data/edges.js"></script>
+  <script src="data/units.js"></script>
+  <script src="data/cross_unit_edges.js"></script>
+  <script src="data/cluster_nodes.js"></script>
+  <script src="data/cluster_edges.js"></script>
+  <script src="data/topic_diversity.js"></script>
+
+  <!-- ── External libraries ──────────────────────────────────────────────── -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <!-- ── App scripts — load order matters:
+         1. core/utils.js      (Logger, InputMode, onTap, getEl — must be first)
+         2. core/datastore.js  (DS — depends on utils + data globals)
+         3. core/panels.js     (Panels — depends on DS, references Left/Right/Drawer)
+         4. Left panels        (LeftV1/V2/V3)
+         5. Right panels       (RightV1/V2/V3)
+         6. Drawer             (Drawer + DrawerV1/V2/V3)
+         7. Search             (Search)
+         8. Views              (View1/2/3/Cluster — depend on all above)
+         9. core/main.js       (switchView etc — depends on everything)
+  ────────────────────────────────────────────────────────────────────────── -->
+
+  <!-- Core -->
+  <script src="js/core/utils.js"></script>
+  <script src="js/core/datastore.js"></script>
+  <script src="js/core/tooltip.js"></script>
+  <script src="js/core/panels.js"></script>
+
+  <!-- Left panels -->
+  <script src="js/left/left_v1.js"></script>
+  <script src="js/left/left_v2.js"></script>
+  <script src="js/left/left_v3.js"></script>
+
+  <!-- Right panels -->
+  <script src="js/right/right_v1.js"></script>
+  <script src="js/right/right_v2.js"></script>
+  <script src="js/right/right_v3.js"></script>
+
+  <!-- Drawer -->
+  <script src="js/drawer/drawer_manager.js"></script>
+  <script src="js/drawer/drawer.js"></script>
+  <script src="js/drawer/drawer_v1.js"></script>
+  <script src="js/drawer/drawer_v2.js"></script>
+  <script src="js/drawer/drawer_v3.js"></script>
+
+  <!-- Search -->
+  <script src="js/search/search.js"></script>
+
+  <!-- Views -->
+  <script src="js/views/view1.js"></script>
+  <script src="js/views/view2.js"></script>
+  <script src="js/views/view3.js"></script>
+  <script src="js/views/view_cluster.js"></script>
+
+  <!-- Main controller (must be last) -->
+  <script src="js/core/main.js"></script>
+
+  <!-- Screen size guard -->
+  <script>
+    (function () {
+      const MIN_W = 1280, MIN_H = 740;
+      function check() {
+        const el = document.getElementById('size-overlay');
+        if (!el) return;
+        el.classList.toggle('visible', window.innerWidth < MIN_W || window.innerHeight < MIN_H);
+      }
+      const ro = new ResizeObserver(check);
+      ro.observe(document.body);
+      window.addEventListener('resize', check);
+      window.addEventListener('load', check);
+      check();
+    })();
+  </script>
+
+</body>
+
+</html>

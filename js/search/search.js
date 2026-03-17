@@ -1,0 +1,208 @@
+/* search/search.js
+ * Header search bar: scholar lookup and topic highlight.
+ * Consolidated from v5 search.js + ui.js search logic.
+ *
+ * Depends on: utils.js, datastore.js
+ * Called by: main.js (Search.init on DOMContentLoaded)
+ * Calls: View1.selectById(), View1.highlightTopic(), View1.clearTopicHighlight(),
+ *        View3.build(), LeftV3.showEgoProfile(), Panels.showScholarCard(), switchView()
+ * Module name for Logger: 'Search'
+ *
+ * DOM targets:
+ *   #hd-search          - text input
+ *   #hd-search-clear    - clear button (x)
+ *   #search-overlay     - dropdown container
+ *   #search-results     - results list inside overlay
+ *   #search-hint        - hint / error message inside overlay
+ *
+ * Public methods:
+ *   Search.init()
+ *   Search.selectScholar(id)
+ *   Search.selectTopic(topic, ids)
+ *   Search.showHint(msg)
+ */
+
+'use strict';
+
+const Search = (() => {
+
+  /* ── init ────────────────────────────────────────────────────────────── */
+  function init() {
+    const input = getEl('hd-search', 'Search');
+    const overlay = getEl('search-overlay', 'Search');
+    const clearBtn = getEl('hd-search-clear', 'Search');
+
+    if (!input || !overlay) {
+      Logger.error('Search', 'required DOM elements not found');
+      return;
+    }
+
+    // Input handler
+    input.addEventListener('input', function () {
+      const q = this.value.trim();
+      if (clearBtn) clearBtn.style.display = q ? 'block' : 'none';
+      if (!q) { overlay.style.display = 'none'; return; }
+
+      const { scholars, topics } = DS.search(q, 8);
+      _renderResults(scholars, topics);
+      overlay.style.display = (scholars.length || topics.length) ? 'block' : 'none';
+    });
+
+    // Keyboard: Escape closes overlay
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Escape') clearSearch();
+    });
+
+    // Clear button
+    if (clearBtn) {
+      onTap(clearBtn, () => clearSearch());
+    }
+
+    // Click outside closes overlay
+    document.addEventListener('click', e => {
+      if (!e.target.closest('#hd-search-wrap') && !e.target.closest('#search-overlay')) {
+        overlay.style.display = 'none';
+      }
+    });
+
+    Logger.info('Search', 'initialized');
+  }
+
+  /* ── render results ──────────────────────────────────────────────────── */
+  function _renderResults(scholars, topics) {
+    const resultsList = getEl('search-results', 'Search');
+    const hint = getEl('search-hint', 'Search');
+    if (!resultsList) return;
+
+    let html = '';
+
+    if (topics.length) {
+      html += `<div class="sr-group-label">Research Topics</div>`;
+      html += topics.map(t => {
+        const label = t.topic.charAt(0).toUpperCase() + t.topic.slice(1);
+        return `<div class="sr-item" data-topic="${t.topic.replace(/"/g, '&quot;')}"
+          data-ids="${JSON.stringify(t.ids).replace(/"/g, '&quot;')}">
+          <span class="sr-dot sr-dot-topic"></span>
+          <span class="sr-name">${label}</span>
+          <span class="sr-badge">${t.ids.length} scholars</span>
+        </div>`;
+      }).join('');
+    }
+
+    if (scholars.length) {
+      html += `<div class="sr-group-label">Scholars</div>`;
+      html += scholars.map(s => {
+        const col = DS.getColor(s.college);
+        const vis = DS.state.visibleIds.has(s.id);
+        return `<div class="sr-item${vis ? '' : ' hidden-node'}" data-id="${s.id}">
+  <div class="sr-dot" style="background:${col}"></div>
+  <span class="sr-name">${s.name}</span>
+  ${vis ? '' : '<span class="sr-hidden-tag">hidden</span>'}
+  <span class="sr-college">${DS.getShortName(s.college)}</span>
+</div>`;
+      }).join('');
+    }
+
+    resultsList.innerHTML = html;
+    if (hint) hint.style.display = 'none';
+
+    // Bind touch-safe taps on result items
+    resultsList.querySelectorAll('.sr-item[data-id]').forEach(item => {
+      onTap(item, () => selectScholar(item.dataset.id));
+    });
+    resultsList.querySelectorAll('.sr-item[data-topic]').forEach(item => {
+      onTap(item, () => {
+        let ids;
+        try { ids = JSON.parse(item.dataset.ids); } catch (e) { ids = []; }
+        selectTopic(item.dataset.topic, ids);
+      });
+    });
+  }
+
+  /* ── selectScholar ───────────────────────────────────────────────────── */
+  function selectScholar(id) {
+    const s = DS.scholarMap.get(id);
+    const inputEl = getEl('hd-search', 'Search');
+    const overlayEl = getEl('search-overlay', 'Search');
+
+    if (inputEl) inputEl.value = s?.name || '';
+    if (overlayEl) overlayEl.style.display = 'none';
+
+    const view = DS.state.view;
+    Logger.info('Search', `selectScholar id=${id} view=${view}`);
+
+    if (view === 'v3') {
+      // Stay in v3, rebuild ego network for this scholar
+      DS.state.selectedId = id;
+      View3.build && View3.build(id, DS.state.egoHops);
+      LeftV3.showEgoProfile && LeftV3.showEgoProfile(id);
+      return;
+    }
+
+    if (view === 'v2') {
+      // Show scholar card in right panel without switching views
+      Panels.showScholarCard(id);
+      return;
+    }
+
+    // Default: v1 — check visibility first
+    if (!DS.state.visibleIds.has(id)) {
+      showHint(`"${s?.name}" is currently hidden by active filters.`);
+      return;
+    }
+
+    if (view !== 'v1') switchView('v1');
+
+    DS.state.selectedId = id;
+    View1.selectById && View1.selectById(id);
+  }
+
+  /* ── selectTopic ─────────────────────────────────────────────────────── */
+  function selectTopic(topic, ids) {
+    const inputEl = getEl('hd-search', 'Search');
+    const overlayEl = getEl('search-overlay', 'Search');
+
+    if (inputEl) inputEl.value = topic.charAt(0).toUpperCase() + topic.slice(1);
+    if (overlayEl) overlayEl.style.display = 'none';
+
+    Logger.info('Search', `selectTopic topic="${topic}" ids=${ids.length}`);
+
+    // Topic highlight only makes sense on the collaboration map
+    if (DS.state.view !== 'v1') switchView('v1');
+    View1.highlightTopic && View1.highlightTopic(ids, topic);
+  }
+
+  /* ── showHint ────────────────────────────────────────────────────────── */
+  function showHint(msg) {
+    const overlayEl = getEl('search-overlay', 'Search');
+    const hintEl = getEl('search-hint', 'Search');
+    const resultsEl = getEl('search-results', 'Search');
+
+    if (hintEl) hintEl.textContent = msg;
+    if (hintEl) hintEl.style.display = 'block';
+    if (overlayEl) overlayEl.style.display = 'block';
+    if (resultsEl) resultsEl.innerHTML = '';
+
+    clearTimeout(showHint._timer);
+    showHint._timer = setTimeout(() => {
+      if (hintEl) hintEl.style.display = 'none';
+      if (overlayEl) overlayEl.style.display = 'none';
+    }, 4000);
+  }
+
+  return { init, selectScholar, selectTopic, showHint };
+})();
+
+/* ── clearSearch: global function bound to clear button + Escape ─────────── */
+function clearSearch() {
+  const inputEl = document.getElementById('hd-search');
+  const overlayEl = document.getElementById('search-overlay');
+  const clearBtn = document.getElementById('hd-search-clear');
+
+  if (inputEl) inputEl.value = '';
+  if (overlayEl) overlayEl.style.display = 'none';
+  if (clearBtn) clearBtn.style.display = 'none';
+
+  View1.clearTopicHighlight && View1.clearTopicHighlight();
+  DS.state.topicHighlight = null;
+}
