@@ -24,13 +24,9 @@ const RightV2 = (() => {
   /* ── reset: show overview for current subview ────────────────────────── */
   function reset(subview) {
     Logger.info('RightV2', `reset subview=${subview}`);
-    const placeholder = getEl('rv2-placeholder', 'RightV2');
-    const card        = getEl('rv2-card', 'RightV2');
-    if (card)        card.style.display        = 'none';
-    if (placeholder) {
-      placeholder.style.display = '';
-      _renderOverview(placeholder, subview);
-    }
+    const card = getEl('rv2-card', 'RightV2');
+    if (card) card.style.display = 'none';
+    if (typeof hideRightPanel === 'function') hideRightPanel();
   }
 
   /* ── showUnit: render full unit card ─────────────────────────────────── */
@@ -49,6 +45,8 @@ const RightV2 = (() => {
 
     if (placeholder) placeholder.style.display = 'none';
     card.style.display = 'block';
+    card.style.opacity = '0';
+    if (typeof showRightPanel === 'function') showRightPanel();
 
     const col    = _getUnitColor(unit);
     const isDept = unit.unit_type === 'department';
@@ -141,6 +139,9 @@ const RightV2 = (() => {
         View2.drillUnit && View2.drillUnit(unit.unit_id);
       });
     }
+
+    // Fade in content
+    requestAnimationFrame(() => requestAnimationFrame(() => { card.style.opacity = ''; }));
   }
 
   /* ── Overview panel ──────────────────────────────────────────────────── */

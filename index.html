@@ -51,7 +51,7 @@
 
       <!-- Brand + feedback link -->
       <div id="hd-brand">
-        <button id="hd-brand-home" onclick="switchView('v1')">
+        <button id="hd-brand-home" onclick="homeReset()">
         <div id="hd-logo">
           <svg width="34" height="34" viewBox="0 0 22 22" fill="none">
             <circle cx="11" cy="11" r="9.5" stroke="#C8102E" stroke-width="1.2" stroke-dasharray="3 2.5"
@@ -75,32 +75,30 @@
         </a>
       </div>
 
-      <!-- Search bar (absolutely centered in header) -->
-      <div id="hd-search-wrap">
-        <svg class="hd-search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="11" cy="11" r="7" />
-          <line x1="16.5" y1="16.5" x2="22" y2="22" />
-        </svg>
-        <input id="hd-search" type="text" placeholder="Search scholars or research topics..." autocomplete="off"
-          spellcheck="false">
-        <button id="hd-search-clear" style="display:none" onclick="clearSearch()">x</button>
-      </div>
 
       <!-- Primary navigation
-           v1 = University Network  (formerly "Scholar Network")
-           v2 = Unit Collaboration  (unchanged)
-           v3 = Scholar Profile     (formerly "Individual View")
+           collab   = Collaboration Map  (formerly v1 / University Network)
+           overview = Overview           (new)
+           bridging = Bridging Scholars  (formerly v1 / Research Clusters)
+           units    = Research Units     (formerly v2 / Unit Collaboration)
+           methods  = Methods            (new)
+           credits  = Credits            (overlay, unchanged)
       -->
       <nav id="hd-nav">
-        <button class="nav-tab active" data-view="v1" onclick="switchView('v1')">
-          <span class="nav-tab-label" data-text="University Network">University Network</span>
+        <button class="nav-tab active" data-view="collab" onclick="switchView('collab')">
+          <span class="nav-tab-label" data-text="Collaboration Map">Collaboration Map</span>
         </button>
-        <button class="nav-tab" data-view="v2" onclick="switchView('v2')">
-          <span class="nav-tab-label" data-text="Unit Collaboration">Unit Collaboration</span>
+        <button class="nav-tab" data-view="overview" onclick="switchView('overview')">
+          <span class="nav-tab-label" data-text="Overview">Overview</span>
         </button>
-        <button class="nav-tab" data-view="v3" onclick="switchView('v3')">
-          <span class="nav-tab-label" data-text="Scholar Profile">Scholar Profile</span>
+        <button class="nav-tab" data-view="bridging" onclick="switchView('bridging')">
+          <span class="nav-tab-label" data-text="Bridging Scholars">Bridging Scholars</span>
+        </button>
+        <button class="nav-tab" data-view="units" onclick="switchView('units')">
+          <span class="nav-tab-label" data-text="Research Units">Research Units</span>
+        </button>
+        <button class="nav-tab" data-view="methods" onclick="switchView('methods')">
+          <span class="nav-tab-label" data-text="Methods">Methods</span>
         </button>
         <div class="nav-divider"></div>
         <button class="nav-tab" data-view="credits" onclick="switchView('credits')">
@@ -110,27 +108,41 @@
 
     </header>
 
-    <!-- Search overlay (positioned below header, above canvas) -->
-    <div id="search-overlay" style="display:none">
-      <div id="search-box">
-        <div id="search-hint" style="display:none"></div>
-        <div id="search-results"></div>
-      </div>
-    </div>
-
     <!-- ── Main 3-column layout ─────────────────────────────────────────── -->
     <div id="layout">
 
-      <!-- Left panel -->
+      <!-- Left panel (overlay) -->
       <aside id="panel-left">
-        <div id="left-content"></div>
+        <div class="panel-inner">
+          <div id="left-content"></div>
+        </div>
       </aside>
 
       <!-- Central canvas area -->
       <main id="canvas-area">
 
-        <!-- ── V1: University Network ───────────────────────────────────── -->
-        <div id="view-v1" class="view active">
+        <!-- ── Collaboration Map ─────────────────────────────────────────── -->
+        <div id="view-collab" class="view active">
+
+          <!-- Search bar + overlay (canvas-centered, collab view only) -->
+          <div id="canvas-search">
+            <div id="hd-search-wrap">
+              <svg class="hd-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="7" />
+                <line x1="16.5" y1="16.5" x2="22" y2="22" />
+              </svg>
+              <input id="hd-search" type="text" placeholder="Search scholars or research topics..." autocomplete="off"
+                spellcheck="false">
+              <button id="hd-search-clear" style="display:none" onclick="clearSearch()">x</button>
+            </div>
+            <div id="search-overlay" style="display:none">
+              <div id="search-box">
+                <div id="search-hint" style="display:none"></div>
+                <div id="search-results"></div>
+              </div>
+            </div>
+          </div>
 
           <!-- Data overview bar (top-left of canvas) -->
           <div id="data-overview">
@@ -149,50 +161,32 @@
           <!-- Force-directed canvas -->
           <canvas id="v1-canvas"></canvas>
 
-          <!-- Research Clusters container (hidden by default) -->
-          <div id="vc-container" style="position:absolute;inset:0;width:100%;height:100%;display:none"></div>
-
-          <!-- Sub-view switcher (top-right of canvas)
-               data-subview values must match DS.state.subview strings:
-               'collabmap' | 'clusters'
-          -->
-          <div id="view-switcher-v1">
-            <button class="vs-btn active" data-subview="collabmap" onclick="switchSubView('collabmap')">
-              <span class="vs-btn-label">Collaboration Map</span>
-            </button>
-            <button class="vs-btn" data-subview="clusters" onclick="switchSubView('clusters')">
-              <span class="vs-btn-label">Research Clusters</span>
-            </button>
-          </div>
-
-          <!-- Zoom controls (bottom-right) -->
-          <div id="canvas-controls">
-            <button class="cc-btn" onclick="v1ZoomIn()" title="Zoom in">
-              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"
-                stroke-linecap="round">
-                <line x1="6" y1="2" x2="6" y2="10" />
-                <line x1="2" y1="6" x2="10" y2="6" />
-              </svg>
-            </button>
-            <button class="cc-btn" onclick="v1ZoomOut()" title="Zoom out">
-              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"
-                stroke-linecap="round">
-                <line x1="2" y1="6" x2="10" y2="6" />
-              </svg>
-            </button>
-            <button class="cc-btn" onclick="v1ZoomReset()" title="Reset zoom">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2">
-                <circle cx="6" cy="6" r="5" />
-                <circle cx="6" cy="6" r="1.5" fill="currentColor" stroke="none" />
-              </svg>
-            </button>
-          </div>
-
-          <!-- Legend (bottom-left) -->
+          <!-- Bottom-left: legend + zoom controls -->
           <div id="canvas-bottom-left">
             <div id="legend-box">
               <div class="legend-title">LEGEND</div>
               <div id="legend-grid"></div>
+            </div>
+            <div id="canvas-controls">
+              <button class="cc-btn" onclick="v1ZoomIn()" title="Zoom in">
+                <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"
+                  stroke-linecap="round">
+                  <line x1="6" y1="2" x2="6" y2="10" />
+                  <line x1="2" y1="6" x2="10" y2="6" />
+                </svg>
+              </button>
+              <button class="cc-btn" onclick="v1ZoomOut()" title="Zoom out">
+                <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"
+                  stroke-linecap="round">
+                  <line x1="2" y1="6" x2="10" y2="6" />
+                </svg>
+              </button>
+              <button class="cc-btn" onclick="v1ZoomReset()" title="Reset zoom">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2">
+                  <circle cx="6" cy="6" r="5" />
+                  <circle cx="6" cy="6" r="1.5" fill="currentColor" stroke="none" />
+                </svg>
+              </button>
             </div>
           </div>
 
@@ -202,46 +196,21 @@
             <div id="iso-list"></div>
           </div>
 
-          <!-- University Overview drawer (bottom, resizable) -->
-          <div id="univ-drawer">
+        </div><!-- /view-collab -->
 
-            <!-- Drag handle / title bar — always visible -->
-            <div id="drawer-resize-handle">
-              <button id="univ-drawer-btn">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-                  stroke-linecap="round">
-                  <polyline points="18,15 12,9 6,15" />
-                </svg>
-                UNIVERSITY OVERVIEW
-              </button>
+        <!-- ── Overview ──────────────────────────────────────────────────── -->
+        <!-- Placeholder: will be populated with storytelling components -->
+        <div id="view-overview" class="view">
+          <div id="overview-content" style="position:absolute;inset:0;overflow-y:auto;padding:24px 32px;box-sizing:border-box;"></div>
+        </div><!-- /view-overview -->
 
-              <!-- Centered grip indicator -->
-              <div id="drawer-grip">
-                <span></span>
-              </div>
+        <!-- ── Bridging Scholars (formerly Research Clusters) ────────────── -->
+        <div id="view-bridging" class="view">
+          <div id="vc-container" style="position:absolute;inset:0;width:100%;height:100%"></div>
+        </div><!-- /view-bridging -->
 
-              <!-- Right-side controls -->
-              <!-- <div id="drawer-controls">
-                <button class="drawer-ctrl-btn" id="drawer-btn-default"
-                  title="Default height" onclick="DrawerManager.snapDefault()">&#9633;</button>
-                <button class="drawer-ctrl-btn" id="drawer-btn-max"
-                  title="Full height" onclick="DrawerManager.snapMax()">&#8679;</button>
-                <button class="drawer-ctrl-btn" id="drawer-btn-close"
-                  title="Collapse" onclick="DrawerManager.close()">&#8681;</button>
-              </div> -->
-            </div>
-
-            <!-- Scrollable content -->
-            <div id="univ-drawer-content">
-              <div id="univ-drawer-inner"></div>
-            </div>
-
-          </div>
-
-        </div><!-- /view-v1 -->
-
-        <!-- ── V2: Unit Collaboration ───────────────────────────────────── -->
-        <div id="view-v2" class="view">
+        <!-- ── Research Units (formerly Unit Collaboration v2) ───────────── -->
+        <div id="view-units" class="view">
 
           <!-- SVG canvas for hexagonal unit layout -->
           <div id="v2-wrap" style="position:absolute;inset:0;width:100%;height:100%">
@@ -263,91 +232,68 @@
             </button>
           </div>
 
-        </div><!-- /view-v2 -->
+        </div><!-- /view-units -->
 
-        <!-- ── V3: Scholar Profile ──────────────────────────────────────── -->
-        <div id="view-v3" class="view">
-
-          <!-- Empty state (shown when no scholar is selected) -->
-          <div id="v3-placeholder" class="view-placeholder" style="position:absolute;inset:0;display:flex;flex-direction:column;
-                   align-items:center;justify-content:center;gap:12px">
-            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" opacity=".2">
-              <circle cx="24" cy="24" r="6" stroke="#C8102E" stroke-width="2" />
-              <circle cx="24" cy="24" r="14" stroke="#C8102E" stroke-width="1.2" stroke-dasharray="4 3" />
-              <circle cx="24" cy="24" r="21" stroke="#C8102E" stroke-width="1" stroke-dasharray="2 4" />
-            </svg>
-            <p style="color:var(--text3);font-size:var(--fs-small);text-align:center">
-              Scholar Profile<br>
-              <span style="font-size:var(--fs-xs)">Select a scholar from the University Network to explore</span>
-            </p>
+        <!-- ── Methods ───────────────────────────────────────────────────── -->
+        <!-- Placeholder: will be populated with data/methodology description -->
+        <div id="view-methods" class="view">
+          <div class="view-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">
+            <p style="color:var(--text3);font-size:var(--fs-small)">Methods — coming soon</p>
           </div>
+        </div><!-- /view-methods -->
 
-          <!-- Ego network SVG (shown after a scholar is selected) -->
-          <svg id="v3-svg" style="position:absolute;inset:0;width:100%;height:100%;display:none"></svg>
-
-        </div><!-- /view-v3 -->
-
-        <!-- V3 sub-view switcher — lives outside view-v3 so it stays visible
-             when the collabmap sub-view shows the v1 canvas instead -->
-        <div id="view-switcher-v3" style="display:none">
-          <button class="vs-btn" data-subview="collabmap" onclick="setV3Subview('collabmap')">
-            <span class="vs-btn-label">Collaboration Map</span>
-          </button>
-          <button class="vs-btn active" data-subview="ego" onclick="setV3Subview('ego')">
-            <span class="vs-btn-label">Ego Network</span>
-          </button>
+        <!-- University Overview drawer — disabled for now, code preserved -->
+        <div id="univ-drawer" style="display:none">
+          <div id="drawer-resize-handle">
+            <button id="univ-drawer-btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                stroke-linecap="round">
+                <polyline points="18,15 12,9 6,15" />
+              </svg>
+              UNIVERSITY OVERVIEW
+            </button>
+            <div id="drawer-grip"><span></span></div>
+          </div>
+          <div id="univ-drawer-content">
+            <div id="univ-drawer-inner"></div>
+          </div>
         </div>
 
       </main>
 
-      <!-- ── Right panel ────────────────────────────────────────────────── -->
-      <!-- Three separate placeholder/card pairs, one per view.
-           Panels.update() shows/hides the correct pair via CSS display.
-           Only the active view's pair is ever visible.
-      -->
+      <!-- ── Right panel (contextual overlay) ─────────────────────────── -->
       <aside id="panel-right">
 
-        <!-- V1: University Network right panel -->
-        <div id="rp-v1" class="rp-view active">
+<div class="panel-inner">
+
+        <!-- Collaboration Map right panel -->
+        <div id="rp-collab" class="rp-view active">
           <div id="rv1-placeholder">
-            <!-- Default overview — rendered by RightV1.reset() -->
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" opacity=".4">
-              <circle cx="16" cy="16" r="13" stroke="currentColor" stroke-width="1.5" />
-              <circle cx="16" cy="12" r="4" stroke="currentColor" stroke-width="1.5" />
-              <path d="M8 26c0-4.4 3.6-8 8-8s8 3.6 8 8" stroke="currentColor" stroke-width="1.5" />
-            </svg>
-            <p>Select a scholar<br>to view profile</p>
+            <p>Click a node to view scholar details</p>
           </div>
-          <div id="rv1-card" style="display:none">
+          <div id="rv1-card">
             <!-- Scholar card — rendered by RightV1.showScholar() -->
           </div>
         </div>
 
-        <!-- V2: Unit Collaboration right panel -->
-        <div id="rp-v2" class="rp-view">
+        <!-- Research Units right panel -->
+        <div id="rp-units" class="rp-view">
           <div id="rv2-placeholder">
-            <!-- Default overview — rendered by RightV2.reset() -->
+            <p>Click a unit to view details</p>
           </div>
-          <div id="rv2-card" style="display:none">
+          <div id="rv2-card">
             <!-- Unit card — rendered by RightV2.showUnit() -->
           </div>
         </div>
 
-        <!-- V3: Scholar Profile right panel -->
-        <div id="rp-v3" class="rp-view">
-          <div id="rv3-placeholder">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" opacity=".4">
-              <circle cx="16" cy="16" r="13" stroke="currentColor" stroke-width="1.5" />
-              <circle cx="16" cy="12" r="4" stroke="currentColor" stroke-width="1.5" />
-              <path d="M8 26c0-4.4 3.6-8 8-8s8 3.6 8 8" stroke="currentColor" stroke-width="1.5" />
-            </svg>
-            <p>Select a scholar<br>to view profile</p>
-          </div>
-          <div id="rv3-card" style="display:none">
-            <!-- Ego stats — rendered by RightV3.showStats() -->
+        <!-- Bridging Scholars right panel -->
+        <div id="rp-bridging" class="rp-view">
+          <div id="rv-bridging-card">
+            <!-- Bridging scholar / cluster detail -->
           </div>
         </div>
 
+        </div><!-- /panel-inner -->
       </aside>
 
     </div><!-- /layout -->
@@ -369,6 +315,20 @@
           An interactive visualization of intra-university co-authorship networks,
           designed for meta-scientific exploration of collaboration patterns.
         </p>
+        <div class="tut-stats">
+          <div class="tut-stat">
+            <span class="tut-stat-num" id="tut-scholar-count">--</span>
+            <span class="tut-stat-label">Scholars</span>
+          </div>
+          <div class="tut-stat">
+            <span class="tut-stat-num" id="tut-edge-count">--</span>
+            <span class="tut-stat-label">Collaborations</span>
+          </div>
+          <div class="tut-stat">
+            <span class="tut-stat-num" id="tut-center-count">--</span>
+            <span class="tut-stat-label">Centers</span>
+          </div>
+        </div>
         <button id="tut-enter-btn" onclick="enterApp()">Enter</button>
         <p class="tut-note">Data sourced from OpenAlex and ORCID</p>
       </div>
@@ -393,7 +353,7 @@
         </div>
         <div class="credits-divider"></div>
         <div class="credits-section">
-          <p class="credits-role">SPECIAL THANKS</p>
+          <p class="credits-role">PRINCIPAL INVESTIGATORS</p>
           <p class="credits-name" onclick="window.open('https://dakotamurray.me/','_blank')">Dakota Murray</p>
           <p class="credits-name" onclick="window.open('https://www.nabeelgillani.com/','_blank')">Nabeel Gillani</p>
           <p class="credits-name"

@@ -93,11 +93,11 @@ const Search = (() => {
       html += `<div class="sr-group-label">Scholars</div>`;
       html += scholars.map(s => {
         const col = DS.getColor(s.college);
-        const vis = DS.state.visibleIds.has(s.id);
-        return `<div class="sr-item${vis ? '' : ' hidden-node'}" data-id="${s.id}">
+        // const vis = DS.state.visibleIds.has(s.id); // hidden tag disabled per user testing
+        return `<div class="sr-item" data-id="${s.id}">
   <div class="sr-dot" style="background:${col}"></div>
   <span class="sr-name">${s.name}</span>
-  ${vis ? '' : '<span class="sr-hidden-tag">hidden</span>'}
+  <!-- ${DS.state.visibleIds.has(s.id) ? '' : '<span class="sr-hidden-tag">hidden</span>'} -->
   <span class="sr-college">${DS.getShortName(s.college)}</span>
 </div>`;
       }).join('');
@@ -131,21 +131,7 @@ const Search = (() => {
     const view = DS.state.view;
     Logger.info('Search', `selectScholar id=${id} view=${view}`);
 
-    if (view === 'v3') {
-      // Stay in v3, rebuild ego network for this scholar
-      DS.state.selectedId = id;
-      View3.build && View3.build(id, DS.state.egoHops);
-      LeftV3.showEgoProfile && LeftV3.showEgoProfile(id);
-      return;
-    }
-
-    if (view === 'v2') {
-      // Show scholar card in right panel without switching views
-      Panels.showScholarCard(id);
-      return;
-    }
-
-    // Default: v1 — auto-enable filters if scholar is hidden
+    // Auto-enable filters if scholar is hidden under current filter
     if (!DS.state.visibleIds.has(id)) {
       const sf = DS.state.statusFilter;
       const tf = DS.state.trackFilter;
@@ -161,7 +147,18 @@ const Search = (() => {
       View1.build && View1.build();
     }
 
-    if (view !== 'v1') switchView('v1');
+    // Also enable Unlinked if scholar is visible but isolated (no connections in current view)
+    if (DS.state.visibleIds.has(id) && !DS.state.showIsolated) {
+      const visNbrs = (DS.adjacency.get(id) || []).filter(x => DS.state.visibleIds.has(x.id));
+      if (visNbrs.length === 0) {
+        DS.state.showIsolated = true;
+        const isoBtn = document.getElementById('lv1-btn-isolated');
+        if (isoBtn) isoBtn.classList.add('active');
+        View1.build && View1.build();
+      }
+    }
+
+    if (view !== 'collab') switchView('collab');
 
     DS.state.selectedId = id;
     View1.selectById && View1.selectById(id);
@@ -175,10 +172,48 @@ const Search = (() => {
     if (inputEl) inputEl.value = topic.charAt(0).toUpperCase() + topic.slice(1);
     if (overlayEl) overlayEl.style.display = 'none';
 
+    // Close right panel when switching to topic highlight mode
+    if (typeof hideRightPanel === 'function') hideRightPanel();
+
     Logger.info('Search', `selectTopic topic="${topic}" ids=${ids.length}`);
 
     // Topic highlight only makes sense on the collaboration map
-    if (DS.state.view !== 'v1') switchView('v1');
+    if (DS.state.view !== 'collab') switchView('collab');
+
+    // Auto-enable filters so all topic scholars become visible
+    const hiddenIds = ids.filter(id => !DS.state.visibleIds.has(id));
+    let needBuild = false;
+    if (hiddenIds.length) {
+      const sf = DS.state.statusFilter;
+      const tf = DS.state.trackFilter;
+      hiddenIds.forEach(id => {
+        const s = DS.scholarMap.get(id);
+        if (!s) return;
+        if (!sf.has(s.status)) { sf.add(s.status); needBuild = true; }
+        if (s.track && !tf.has(s.track)) { tf.add(s.track); needBuild = true; }
+      });
+      // Sync left panel button states
+      document.querySelectorAll('[data-sf]').forEach(b => b.classList.toggle('active', sf.has(b.dataset.sf)));
+      document.querySelectorAll('[data-tf]').forEach(b => b.classList.toggle('active', tf.has(b.dataset.tf)));
+    }
+
+    // Enable Unlinked if any result scholar is isolated (visible but no connections),
+    // OR if there are hidden ids that may become isolated after filter changes —
+    // must be set before build() so all nodes are visible before camera adjusts.
+    if (!DS.state.showIsolated) {
+      const hasIsolated = hiddenIds.length > 0 || ids.some(id => {
+        if (!DS.state.visibleIds.has(id)) return false;
+        return (DS.adjacency.get(id) || []).filter(x => DS.state.visibleIds.has(x.id)).length === 0;
+      });
+      if (hasIsolated) {
+        DS.state.showIsolated = true;
+        const isoBtn = document.getElementById('lv1-btn-isolated');
+        if (isoBtn) isoBtn.classList.add('active');
+        needBuild = true;
+      }
+    }
+
+    if (needBuild) View1.build && View1.build();
     View1.highlightTopic && View1.highlightTopic(ids, topic);
   }
 

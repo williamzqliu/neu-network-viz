@@ -745,7 +745,7 @@ const View2 = (() => {
     if (!card) return;
     card.style.display = 'none';
     card.innerHTML = '';
-    ph.style.display = '';
+    if (ph) ph.style.display = '';
   }
 
   function syncSwitcherBtns() {

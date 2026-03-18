@@ -28,12 +28,12 @@
 
 const DrawerManager = (() => {
 
-  const COLLAPSED_H  = 35;    // handle bar only (px)
-  const DEFAULT_H    = 260;   // default open height (px)
-  const MIN_DRAG_H   = 80;    // minimum draggable height (px)
+  const COLLAPSED_H = 35;    // handle bar only (px)
+  const DEFAULT_H = 260;   // default open height (px)
+  const MIN_DRAG_H = 80;    // minimum draggable height (px)
 
-  let _state        = 'collapsed'; // 'collapsed' | 'open' | 'max'
-  let _lastOpenH    = DEFAULT_H;   // remember user's drag height
+  let _state = 'collapsed'; // 'collapsed' | 'open' | 'max'
+  let _lastOpenH = DEFAULT_H;   // remember user's drag height
 
   /* ── init: called once on DOMContentLoaded ───────────────────────────── */
   function init() {
@@ -133,10 +133,10 @@ const DrawerManager = (() => {
 
   /* ── drag logic ──────────────────────────────────────────────────────── */
   function _startDrag(startY, onEndCallback) {
-    const el     = document.getElementById('univ-drawer');
+    const el = document.getElementById('univ-drawer');
     if (!el) return;
 
-    const startH  = el.offsetHeight;
+    const startH = el.offsetHeight;
     const canvasH = _canvasHeight();
 
     // Disable CSS transition during drag for smoothness
@@ -146,7 +146,7 @@ const DrawerManager = (() => {
 
     function onMove(clientY) {
       const delta = startY - clientY;  // drag up = positive = taller
-      const newH  = clamp(startH + delta, COLLAPSED_H, canvasH);
+      const newH = clamp(startH + delta, COLLAPSED_H, canvasH);
       el.style.height = newH + 'px';
       if (Math.abs(delta) > 4) hasMoved = true;
 
@@ -165,9 +165,9 @@ const DrawerManager = (() => {
 
     function onEnd(clientY) {
       document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup',   onMouseUp);
+      document.removeEventListener('mouseup', onMouseUp);
       document.removeEventListener('touchmove', onTouchMove);
-      document.removeEventListener('touchend',  onTouchEnd);
+      document.removeEventListener('touchend', onTouchEnd);
 
       // Restore transition
       el.style.transition = '';
@@ -198,14 +198,14 @@ const DrawerManager = (() => {
     }
 
     function onMouseMove(e) { onMove(e.clientY); }
-    function onMouseUp(e)   { onEnd(e.clientY); }
+    function onMouseUp(e) { onEnd(e.clientY); }
     function onTouchMove(e) { e.preventDefault(); onMove(e.touches[0].clientY); }
-    function onTouchEnd(e)  { onEnd(e.changedTouches[0].clientY); }
+    function onTouchEnd(e) { onEnd(e.changedTouches[0].clientY); }
 
     document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup',   onMouseUp);
+    document.addEventListener('mouseup', onMouseUp);
     document.addEventListener('touchmove', onTouchMove, { passive: false });
-    document.addEventListener('touchend',  onTouchEnd);
+    document.addEventListener('touchend', onTouchEnd);
   }
 
   /* ── helpers ─────────────────────────────────────────────────────────── */
@@ -242,11 +242,9 @@ const DrawerManager = (() => {
     if (!svg) return;
 
     if (_state === 'collapsed') {
-      svg.style.transform = 'rotate(180deg)'; // arrow pointing up = "open"
-    } else if (_state === 'max') {
-      svg.style.transform = 'rotate(0deg)';   // arrow pointing up = "can collapse"
-    } else {
       svg.style.transform = 'rotate(0deg)';
+    } else {
+      svg.style.transform = 'rotate(180deg)';
     }
   }
 

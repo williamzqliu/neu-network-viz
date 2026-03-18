@@ -114,15 +114,17 @@ const LeftV1 = (() => {
         <div class="lv1-filter-group">
           <div class="lv1-filter-label" style="font-size:13px">STATUS</div>
           <div class="btn-group">
-            <button class="filter-btn${s.statusFilter.has('current') ? ' active' : ''}" data-sf="current" onclick="LeftV1.setStatus('current')">Active</button>
+            <button class="filter-btn addon-btn${s.statusFilter.has('current') ? ' active' : ''}" data-sf="current" onclick="LeftV1.setStatus('current')">Active</button>
             <button class="filter-btn addon-btn${s.statusFilter.has('former') ? ' active' : ''}" data-sf="former" onclick="LeftV1.setStatus('former')">Former</button>
             <button class="filter-btn addon-btn${s.statusFilter.has('retired') ? ' active' : ''}" data-sf="retired" onclick="LeftV1.setStatus('retired')">Retired</button>
+            <span class="btn-group-break"></span>
+            <button class="filter-btn addon-btn${s.showIsolated ? ' active' : ''}" id="lv1-btn-isolated" data-sf="isolated" onclick="toggleIsolated()">Unlinked</button>
           </div>
         </div>
         <div class="lv1-filter-group">
           <div class="lv1-filter-label" style="font-size:13px">TRACK</div>
           <div class="btn-group">
-            <button class="filter-btn${s.trackFilter.has('research_faculty') ? ' active' : ''}" data-tf="research_faculty" onclick="LeftV1.setTrack('research_faculty')">Research Faculty</button>
+            <button class="filter-btn addon-btn${s.trackFilter.has('research_faculty') ? ' active' : ''}" data-tf="research_faculty" onclick="LeftV1.setTrack('research_faculty')">Research Faculty</button>
             <button class="filter-btn addon-btn${s.trackFilter.has('research_other') ? ' active' : ''}" data-tf="research_other" onclick="LeftV1.setTrack('research_other')">Research Other</button>
             <button class="filter-btn addon-btn${s.trackFilter.has('teaching_clinical') ? ' active' : ''}" data-tf="teaching_clinical" onclick="LeftV1.setTrack('teaching_clinical')">Teaching / Clinical</button>
           </div>
@@ -196,7 +198,6 @@ const LeftV1 = (() => {
 <div class="btn-group">
   <button class="vc-btn${s.showLabels ? ' active' : ''}" id="lv1-btn-labels"   onclick="toggleLabels()">Labels</button>
   <button class="vc-btn${s.showEdgeClick ? ' active' : ''}" id="lv1-btn-edgeclick" onclick="LeftV1.toggleEdgeClick()">Link Select</button>
-  <button class="vc-btn${s.showIsolated ? ' active' : ''}" id="lv1-btn-isolated" onclick="toggleIsolated()">Show Isolated</button>
 </div>
         </div>
         <div class="lv1-filter-group">
@@ -494,10 +495,15 @@ const LeftV1 = (() => {
   /* ── Public setters (called from HTML onclick) ───────────────────────── */
   function setStatus(v) {
     const sf = DS.state.statusFilter;
-    if (sf.has(v) && sf.size === 1) return; // keep at least one selected
+    // When Unlinked is active, allow statusFilter to reach 0 (isolated nodes still show)
+    if (sf.has(v) && sf.size === 1 && !DS.state.showIsolated) return;
     sf.has(v) ? sf.delete(v) : sf.add(v);
     document.querySelectorAll('[data-sf]').forEach(b => {
-      b.classList.toggle('active', sf.has(b.dataset.sf));
+      if (b.dataset.sf === 'isolated') {
+        b.classList.toggle('active', DS.state.showIsolated);
+      } else {
+        b.classList.toggle('active', sf.has(b.dataset.sf));
+      }
     });
     View1.build();
   }

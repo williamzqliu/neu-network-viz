@@ -16,9 +16,9 @@ const Panels = (() => {
 
   /* ── Default subview per view ──────────────────────────────────────────── */
   const DEFAULT_SUBVIEW = {
-    v1: 'collabmap',
-    v2: 'dept',
-    v3: 'ego',
+    collab:   'collabmap',
+    units:    'dept',
+    bridging: 'clusters',
   };
 
   /* ── Public: update all panels for a given view + subview ──────────────── */
@@ -41,9 +41,7 @@ const Panels = (() => {
   function _updateSubviewButtons(view, subview) {
     // Each view has its own switcher container; only touch buttons inside it
     const containerIds = {
-      v1: 'view-switcher-v1',
-      v2: 'view-switcher-v2',
-      v3: 'view-switcher-v3',
+      units: 'view-switcher-v2',
     };
     const containerId = containerIds[view];
     if (!containerId) return;
@@ -62,12 +60,13 @@ const Panels = (() => {
     if (!el) return;
 
     try {
-      if (view === 'v1') {
+      if (view === 'collab') {
         LeftV1.render(el, subview);
-      } else if (view === 'v2') {
+      } else if (view === 'units') {
         LeftV2.render(el, subview);
-      } else if (view === 'v3') {
-        LeftV3.render(el, subview);
+      } else {
+        // overview, bridging, methods: no left panel content
+        el.innerHTML = '';
       }
     } catch (e) {
       Logger.error('Panels', `left panel render failed for ${view}/${subview}`, e);
@@ -77,20 +76,19 @@ const Panels = (() => {
   /* ── Right panel dispatch ──────────────────────────────────────────────── */
   function _updateRight(view, subview) {
     // Switch active rp-view container
-    const viewMap = { v1: 'rp-v1', v2: 'rp-v2', v3: 'rp-v3' };
+    const viewMap = { collab: 'rp-collab', units: 'rp-units', bridging: 'rp-bridging' };
     document.querySelectorAll('.rp-view').forEach(el => {
-      el.classList.toggle('active', el.id === viewMap[view]);
+      el.classList.toggle('active', el.id === (viewMap[view] || ''));
     });
 
     // Reset the panel for this view (shows default placeholder/overview)
     try {
-      if (view === 'v1') {
+      if (view === 'collab') {
         RightV1.reset(subview);
-      } else if (view === 'v2') {
+      } else if (view === 'units') {
         RightV2.reset(subview);
-      } else if (view === 'v3') {
-        RightV3.reset(subview);
       }
+      // bridging: right panel managed by ViewCluster click handler
     } catch (e) {
       Logger.error('Panels', `right panel reset failed for ${view}/${subview}`, e);
     }
@@ -106,17 +104,12 @@ const Panels = (() => {
   }
 
   /* ── showScholarCard: called by views when a scholar node is clicked ────── */
-  // view1 -> RightV1.showScholar(id)
-  // view3 -> LeftV3.showEgoProfile(id) + RightV3.showStats(id)
   function showScholarCard(id) {
     const view = DS.state.view;
     Logger.info('Panels', `showScholarCard id=${id} view=${view}`);
     try {
-      if (view === 'v1') {
+      if (view === 'collab') {
         RightV1.showScholar(id);
-      } else if (view === 'v3') {
-        LeftV3.showEgoProfile(id);
-        RightV3.showStats(id);
       }
     } catch (e) {
       Logger.error('Panels', `showScholarCard failed for ${id}`, e);

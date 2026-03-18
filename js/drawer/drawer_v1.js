@@ -25,8 +25,8 @@ const DrawerV1 = (() => {
     container.innerHTML = _buildLayout(subview);
     // Use rAF x2 so the container has its final dimensions
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      const contentH = container.parentElement?.offsetHeight || 240;
-      const chartH   = Math.max(110, Math.min(contentH - 120, 320));
+      const contentH = container.offsetHeight || container.parentElement?.offsetHeight || 240;
+      const chartH   = Math.max(110, Math.min(contentH - 120, 480));
       _drawTimeline('#dv1-timeline', chartH);
       _drawCollegeBar('#dv1-college-bar', chartH);
     }));

@@ -27,79 +27,85 @@ function switchView(view) {
   }
 
   const current = DS.state.view;
-  const currentSubview = DS.state.subview;
-  const lastV1Subview = current === 'v1' ? currentSubview : (DS.state._lastV1Subview || 'collabmap');
-  DS.state._lastV1Subview = lastV1Subview;
 
-  // Already on this view - no-op unless a pending v3 scholar is queued
-  if (view === current && view !== 'v3') return;
+  // Already on this view — no-op
+  if (view === current) return;
 
   Logger.info('Main', `switchView ${current} -> ${view}`);
 
-  // Update nav tab active state immediately (no fade needed for tabs)
+  // Update nav tab active state immediately
   document.querySelectorAll('.nav-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.view === view);
   });
 
-  // Fade out current view, then switch
-  const currentPane = document.getElementById('view-' + current);
-  const nextPane = document.getElementById('view-' + view);
+  // Fade out left panel content immediately
+  const leftContent = document.getElementById('left-content');
+  if (leftContent) leftContent.style.opacity = '0';
 
-  // Remove active from current (triggers fade-out via CSS transition)
+  // Start panel slide immediately — only the slide, not canvas overlay positions
+  _slidePanels(view);
+
+  // Fade out current view pane
+  const currentPane = document.getElementById('view-' + current);
   if (currentPane) currentPane.classList.remove('active');
 
-  // After fade-out completes, activate next view and trigger build
+  // Clear overview content when leaving — D3 SVG elements inside can have
+  // explicit pointer-events that bypass the parent's pointer-events:none
+  if (current === 'overview') {
+    const oc = document.getElementById('overview-content');
+    if (oc) oc.innerHTML = '';
+  }
+
   const FADE_MS = 220; // must match CSS transition duration
   setTimeout(() => {
-    // Show/hide: set all inactive, then activate target
+    // Activate target view pane
     document.querySelectorAll('.view').forEach(pane => {
       pane.classList.toggle('active', pane.id === 'view-' + view);
     });
 
-    // Show/hide the v3 switcher (lives outside view-v3)
-    const v3sw = document.getElementById('view-switcher-v3');
-    if (v3sw) v3sw.style.display = view === 'v3' ? 'flex' : 'none';
-
-    // Determine the default subview for this view
-    const subviewDefaults = { v1: lastV1Subview, v2: 'dept', v3: 'ego' };
+    // Determine default subview
+    const subviewDefaults = { collab: 'collabmap', units: 'dept', bridging: 'clusters' };
     const subview = subviewDefaults[view] || '';
 
-    // Update panels (left, right, drawer)
+    // Update panel content + canvas overlay positions (after fade)
     Panels.update(view, subview);
+    _applyPanelState(view);
+
+    // Fade in left content after panel slide completes (250ms transition)
+    const newVis = PANEL_VISIBILITY[view] || { left: false, right: false };
+    if (newVis.left && leftContent) {
+      setTimeout(() => { leftContent.style.opacity = ''; }, 100);
+    }
 
     // Trigger view-specific build logic
-    if (view === 'v1') {
-      _restoreV1Display();
-    } else if (view === 'v2') {
+    if (view === 'collab') {
+      _initCollabView();
+    } else if (view === 'bridging') {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        ViewCluster.init();
+      }));
+    } else if (view === 'units') {
       requestAnimationFrame(() => requestAnimationFrame(() => {
         View2.build('dept');
       }));
-    } else if (view === 'v3') {
-      if (DS.state._pendingV3Id) {
-        const id = DS.state._pendingV3Id;
-        DS.state._pendingV3Id = null;
-        // v3SourceView already set to 'v1' by the "Open Scholar Profile" button
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          View3.build(id, DS.state.egoHops);
-        }));
-      } else {
-        // Navigated via header tab — hide back button in v3 right panel
-        DS.state.v3SourceView = 'header';
-      }
+    } else if (view === 'overview') {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const container = document.getElementById('overview-content');
+        if (container) DrawerV1.render(container, '');
+      }));
     }
+    // methods: static content, no build needed
   }, FADE_MS);
 }
 
-/* ── Sub-view switching (within a view) ─────────────────────────────────── */
+/* ── Sub-view switching (within Research Units) ──────────────────────────── */
 function switchSubView(subview) {
   const view = DS.state.view;
   Logger.info('Main', `switchSubView view=${view} subview=${subview}`);
 
   Panels.update(view, subview);
 
-  if (view === 'v1') {
-    _handleV1SubView(subview);
-  } else if (view === 'v2') {
+  if (view === 'units') {
     // Fade out the SVG canvas, rebuild, fade back in
     const svg = document.getElementById('v2-svg');
     if (svg) svg.style.opacity = '0';
@@ -108,95 +114,30 @@ function switchSubView(subview) {
       if (svg) svg.style.opacity = '1';
     }, 200);
   }
-  // v3 subviews handled by their own button handlers (setEgoHop, goToCollabMap)
 }
 
-/* ── V1 sub-view: toggle between Collaboration Map and Research Clusters ─── */
-function _handleV1SubView(subview) {
-  const canvas = getEl('v1-canvas', 'Main');
-  const vcWrap = getEl('vc-container', 'Main');
-  const legend = getEl('canvas-bottom-left', 'Main');
-  const overview = getEl('data-overview', 'Main');
-  const controls = getEl('canvas-controls', 'Main');
-
-  const FADE_MS = 200;
-
-  if (subview === 'collabmap') {
-    // Fade out clusters view
-    if (vcWrap) vcWrap.style.opacity = '0';
-    setTimeout(() => {
-      if (vcWrap) vcWrap.style.display = 'none';
-      if (canvas) canvas.style.display = 'block';
-      if (legend) legend.style.display = 'flex';
-      if (overview) overview.style.display = 'flex';
-      if (controls) controls.style.display = 'flex';
-      ViewCluster.destroy && ViewCluster.destroy();
-      // Fade in canvas and overlays
-      requestAnimationFrame(() => {
-        if (canvas) canvas.style.opacity = '1';
-        if (legend) legend.style.opacity = '1';
-        if (overview) overview.style.opacity = '1';
-        if (controls) controls.style.opacity = '1';
-      });
-    }, FADE_MS);
-  } else if (subview === 'clusters') {
-    // Fade out canvas and overlays
-    if (canvas) canvas.style.opacity = '0';
-    if (legend) legend.style.opacity = '0';
-    if (overview) overview.style.opacity = '0';
-    if (controls) controls.style.opacity = '0';
-    setTimeout(() => {
-      if (canvas) canvas.style.display = 'none';
-      if (legend) legend.style.display = 'none';
-      if (overview) overview.style.display = 'none';
-      if (controls) controls.style.display = 'none';
-      if (vcWrap) vcWrap.style.display = 'block';
-      if (vcWrap) vcWrap.style.opacity = '0';
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        ViewCluster.init();
-        if (vcWrap) vcWrap.style.opacity = '1';
-      }));
-    }, FADE_MS);
-  }
+/* ── Initialize Collaboration Map view ───────────────────────────────────── */
+function _initCollabView() {
+  View1.init && View1.init();
+  View1.build && View1.build();
 }
 
-/* ── Restore V1 canvas visibility after switching back from V2/V3 ────────── */
-function _restoreV1Display() {
-  const subview = DS.state.subview;
-  // Re-apply whichever subview was active
-  _handleV1SubView(subview === 'clusters' ? 'clusters' : 'collabmap');
+/* ── homeReset: brand click — go to collab map and reset view ────────────── */
+function homeReset() {
+  clearSearch();
+  DS.state.selectedId = null;
+  switchView('collab');
+  requestAnimationFrame(() => {
+    View1.clearTopicHighlight && View1.clearTopicHighlight();
+    View1.zoomReset && View1.zoomReset();
+  });
 }
 
-/* ── Scholar Profile: v3 sub-view switching ────────────────────────────── */
-// Called by the two buttons in #view-switcher-v3
-function setV3Subview(subview) {
-  if (DS.state.view !== 'v3') return;
-  DS.state.subview = subview;
-  Logger.info('Main', `setV3Subview subview=${subview}`);
-
-  // Highlight active button
-  const sw = document.getElementById('view-switcher-v3');
-  if (sw) sw.querySelectorAll('.vs-btn').forEach(b =>
-    b.classList.toggle('active', b.dataset.subview === subview));
-
-  if (subview === 'collabmap') {
-    // Show v1 canvas; keep left/right panels in v3 state
-    document.querySelectorAll('.view').forEach(el =>
-      el.classList.toggle('active', el.id === 'view-v1'));
-    const id = DS.state.selectedId;
-    if (id) requestAnimationFrame(() => { View1.focusNode && View1.focusNode(id); });
-  } else {
-    // ego: restore v3 SVG
-    document.querySelectorAll('.view').forEach(el =>
-      el.classList.toggle('active', el.id === 'view-v3'));
-  }
-}
-
-/* ── goToCollabMap: full navigation back to v1 (used by "Back" button) ─── */
+/* ── goToCollabMap: navigate to Collaboration Map (used by other views) ─── */
 function goToCollabMap() {
   const id = DS.state.selectedId;
   Logger.info('Main', `goToCollabMap id=${id}`);
-  switchView('v1');
+  switchView('collab');
   if (id) {
     requestAnimationFrame(() => { View1.focusNode && View1.focusNode(id); });
   }
@@ -213,6 +154,50 @@ function setEgoHop(hops) {
 /* ── University Overview drawer (bottom) ────────────────────────────────── */
 function toggleUnivDrawer() {
   DrawerManager.toggle();
+}
+
+/* ── Panel visibility per view ───────────────────────────────────────────── */
+const PANEL_VISIBILITY = {
+  collab:   { left: true,  right: true  },
+  units:    { left: true,  right: true  },
+  bridging: { left: false, right: true  },
+  overview: { left: false, right: false },
+  methods:  { left: false, right: false },
+};
+
+// Slide panels immediately on view switch — does NOT move canvas overlay positions
+function _slidePanels(view) {
+  const vis = PANEL_VISIBILITY[view] || { left: false, right: false };
+  const leftEl  = document.getElementById('panel-left');
+  const rightEl = document.getElementById('panel-right');
+  if (leftEl) leftEl.classList.toggle('slide-out', !vis.left);
+  if (rightEl) rightEl.classList.remove('open');
+}
+
+function _applyPanelState(view) {
+  const vis = PANEL_VISIBILITY[view] || { left: false, right: false };
+  const leftEl   = document.getElementById('panel-left');
+  const rightEl  = document.getElementById('panel-right');
+  const layoutEl = document.getElementById('layout');
+
+  if (leftEl) leftEl.classList.toggle('slide-out', !vis.left);
+
+  // Canvas overlays offset: 14px from left panel right edge when panel shown,
+  // plain 14px when left panel is hidden
+  if (layoutEl) layoutEl.classList.toggle('no-left-panel', !vis.left);
+
+  // Right panel: hide on view switch; shows via showRightPanel() on node click
+  if (rightEl) rightEl.classList.remove('open');
+}
+
+function showRightPanel() {
+  const el = document.getElementById('panel-right');
+  if (el) el.classList.add('open');
+}
+
+function hideRightPanel() {
+  const el = document.getElementById('panel-right');
+  if (el) el.classList.remove('open');
 }
 
 /* ── Canvas zoom controls (v1) ───────────────────────────────────────────── */
@@ -241,12 +226,33 @@ function enterApp() {
   const overlay = getEl('tutorial-overlay', 'Main');
   if (!overlay) return;
   overlay.style.opacity = '0';
-  overlay.style.transition = 'opacity 0.4s ease';
+  overlay.style.transition = 'opacity 0.2s ease';
   setTimeout(() => {
     overlay.style.display = 'none';
     requestAnimationFrame(() => {
+      DS.state.view    = 'collab';
+      DS.state.subview = 'collabmap';
       View1.init();
       View1.build();
+
+      // Canvas overlays fade in
+      setTimeout(() => {
+        ['data-overview', 'canvas-bottom-left', 'canvas-controls', 'canvas-search'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.style.opacity = '';
+        });
+      }, 800);
+
+      // Left panel slides in after canvas overlays
+      setTimeout(() => {
+        const leftEl = document.getElementById('panel-left');
+        if (leftEl) leftEl.classList.remove('slide-out');
+        // After slide completes, fade in content
+        setTimeout(() => {
+          const leftContent = document.getElementById('left-content');
+          if (leftContent) leftContent.style.opacity = '';
+        }, 260); // slightly longer than panel transition (250ms)
+      }, 1000);
     });
   }, 400);
 }
@@ -273,15 +279,30 @@ window.addEventListener('DOMContentLoaded', () => {
   if (loading) loading.style.display = 'none';
   if (app) app.style.display = 'grid';
 
+  // Fade in tutorial overlay
+  const tutOverlay = document.getElementById('tutorial-overlay');
+  if (tutOverlay) requestAnimationFrame(() => { tutOverlay.style.opacity = '1'; });
+
   // Initialize search
   Search.init();
 
   // Initialize resizable drawer
   DrawerManager.init();
 
-  // Set initial panel state (v1 / collabmap) without triggering view build
+  // Set initial panel state without triggering view build
   // (View1.init() + build() is deferred until enterApp() is called)
-  Panels.update('v1', 'collabmap');
+  Panels.update('collab', 'collabmap');
+  _applyPanelState('collab');
+
+  // Entrance animation: start left panel slid out, content + canvas overlays hidden
+  const leftEl = document.getElementById('panel-left');
+  if (leftEl) leftEl.classList.add('slide-out');
+  const leftContent = document.getElementById('left-content');
+  if (leftContent) leftContent.style.opacity = '0';
+  ['data-overview', 'canvas-bottom-left', 'canvas-controls', 'canvas-search'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.opacity = '0';
+  });
 
   Logger.info('Main', 'app initialized');
 });

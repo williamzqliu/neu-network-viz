@@ -50,13 +50,12 @@ const Drawer = (() => {
     if (!inner) return;
 
     try {
-      if (view === 'v1') {
+      if (view === 'collab') {
         DrawerV1.render(inner, subview);
-      } else if (view === 'v2') {
+      } else if (view === 'units') {
         DrawerV2.render(inner, subview);
-      } else if (view === 'v3') {
-        DrawerV3.render(inner, subview);
       }
+      // bridging, overview, methods: drawer disabled
     } catch (e) {
       Logger.error('Drawer', `render failed for ${view}/${subview}`, e);
       inner.innerHTML = `<div class="drawer-error">Chart unavailable</div>`;

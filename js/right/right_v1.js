@@ -24,13 +24,12 @@
 
 const RightV1 = (() => {
 
-  /* ── reset: show placeholder / default overview ──────────────────────── */
+  /* ── reset: hide panel and clear card content ────────────────────────── */
   function reset(subview) {
     Logger.info('RightV1', `reset subview=${subview}`);
-    const placeholder = getEl('rv1-placeholder', 'RightV1');
     const card = getEl('rv1-card', 'RightV1');
-    if (placeholder) placeholder.style.display = '';
     if (card) card.style.display = 'none';
+    if (typeof hideRightPanel === 'function') hideRightPanel();
   }
 
   /* ── showScholar: render full scholar card ───────────────────────────── */
@@ -46,12 +45,14 @@ const RightV1 = (() => {
       return;
     }
 
-    const placeholder = opts.placeholder || getEl('rv1-placeholder', 'RightV1');
+    const placeholder = opts.placeholder || document.getElementById('rv1-placeholder');
     const card        = opts.card        || getEl('rv1-card',        'RightV1');
     if (!card) return;
 
     if (placeholder) placeholder.style.display = 'none';
     card.style.display = 'flex';
+    card.style.opacity = '0';
+    if (typeof showRightPanel === 'function') showRightPanel();
 
     const col = DS.getColor(s.college);
 
@@ -189,11 +190,12 @@ const RightV1 = (() => {
       const dotStyle = nb.status === 'current'
         ? 'background:' + nbc
         : 'background:transparent;border:2px solid ' + nbc;
-      return `<div class="collab-row${vis ? '' : ' hidden-node'}" data-sid="${x.id}">
+      // hidden-node class and collab-hidden-tag disabled per user testing
+      // to restore: `<div class="collab-row${vis ? '' : ' hidden-node'}" ...>` + hidden tag span
+      return `<div class="collab-row" data-sid="${x.id}">
     <div class="collab-left">
       <div class="collab-dot" style="${dotStyle}"></div>
       <span class="collab-name">${nb.name}</span>
-      ${vis ? '' : '<span class="collab-hidden-tag">hidden</span>'}
     </div>
     <span class="collab-weight">${x.weight} collabs</span>
   </div>`;
@@ -201,18 +203,15 @@ const RightV1 = (() => {
 
     // Research interests
     const fields = det.fields || [];
-    const fieldsHtml = fields.slice(0, 3).map((f, fi) => {
-      const subfields = (f.subfields || []).slice(0, 5);
-      const sfTags = subfields.map(sf => {
-        const sfId = `rv1-sf_${id}_${fi}_${sf.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '')}`;
-        return `<span class="subfield-tag" id="${sfId}"
-          data-subfield="${sf.replace(/"/g, '&quot;')}">${sf}</span>`;
-      }).join('');
-      return `<div class="field-block">
-        <div class="field-name rv1-field-toggle open">${f.field}
-          ${'' /* <span class="rv1-field-count">${f.paper_count} papers</span> */}
-        </div>
-        <div class="subfield-list">${sfTags}</div>
+    const fieldsHtml = fields.slice(0, 3).map(f => {
+      const subfieldsHtml = (f.subfields || []).slice(0, 5)
+        .map(sf => `<div class="rv1-fi-row">${sf}</div>`).join('');
+      const topicsHtml = (f.topics || []).slice(0, 5)
+        .map(t => `<div class="rv1-fi-topic-row">${t}</div>`).join('');
+      return `<div class="rv1-fi-block">
+        <div class="rv1-fi-field">${f.field}</div>
+        ${subfieldsHtml ? `<div class="rv1-fi-subfields">${subfieldsHtml}</div>` : ''}
+        ${topicsHtml    ? `<div class="rv1-fi-topics">${topicsHtml}</div>`    : ''}
       </div>`;
     }).join('');
 
@@ -267,6 +266,13 @@ const RightV1 = (() => {
     <div class="rp-collabs-box${nbrs.length > 5 ? '' : ' no-border'}" id="rv1-collabs-${id}">${collabRows}</div>`
     }
 
+    <div class="rp-ego-header" style="display:flex;align-items:center;gap:5px">EGO NETWORK<span class="info-icon" data-tip="Highlight collaboration neighborhood on the map.">?</span></div>
+    <div class="rv1-ego-toggle" id="rv1-ego-toggle-${id}">
+      <button class="rv1-ego-btn active" data-hops="0">DIRECT</button>
+      <button class="rv1-ego-btn${nbrCount === 0 ? ' rv1-ego-btn--off' : ''}" data-hops="1" ${nbrCount === 0 ? 'disabled' : ''}>1-HOP</button>
+      <button class="rv1-ego-btn${nbrCount === 0 ? ' rv1-ego-btn--off' : ''}" data-hops="2" ${nbrCount === 0 ? 'disabled' : ''}>2-HOP</button>
+    </div>
+
     <div class="rp-interests-header">RESEARCH INTERESTS</div>
     ${fieldsHtml
       ? `<div class="rv1-fields" id="rv1-fields-${id}">${fieldsHtml}</div>`
@@ -275,11 +281,9 @@ const RightV1 = (() => {
   </div>
 
   <div class="rv1-sticky-footer">
-    ${opts.isV3
-      ? (DS.state.v3SourceView === 'v1'
-          ? `<button class="rp-explore-btn rv1-back-btn">← Back to University Network</button>`
-          : '')
-      : `<button class="rp-explore-btn rv1-explore-btn" data-id="${id}">Open Scholar Profile</button>`
+    ${opts.isV3 && DS.state.v3SourceView === 'v1'
+      ? `<button class="rp-explore-btn rv1-back-btn">← Back to University Network</button>`
+      : ''
     }
     <div class="rp-data-note">
       Scholar data sourced from OpenAlex and ORCID.<br>
@@ -288,38 +292,41 @@ const RightV1 = (() => {
   </div>
 `;
 
-    // Bind collab row clicks (touch-safe)
+    // Bind collab row clicks — use Search.selectScholar to auto-unlock filters if scholar is hidden
     card.querySelectorAll('.collab-row[data-sid]').forEach(row => {
-      onTap(row, () => { View1.selectById && View1.selectById(row.dataset.sid); });
+      onTap(row, () => { Search.selectScholar(row.dataset.sid); });
     });
 
-    // Bind field expand toggles
-    card.querySelectorAll('.rv1-field-toggle').forEach(el => {
-      onTap(el, (e) => { e.preventDefault(); toggleField(el); });
-    });
 
-    // Bind subfield tag clicks
-    card.querySelectorAll('.subfield-tag').forEach(tag => {
-      onTap(tag, e => {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleSubfield(tag.id, tag.dataset.subfield, e);
-      });
-    });
 
-    // Bind footer button
-    const exploreBtn = card.querySelector('.rv1-explore-btn');
-    if (exploreBtn) {
-      onTap(exploreBtn, () => {
-        DS.state.v3SourceView = 'v1';
-        DS.state._pendingV3Id = id;
-        switchView('v3');
+    // Bind ego network toggle buttons
+    const egoToggle = card.querySelector('.rv1-ego-toggle');
+    if (egoToggle) {
+      egoToggle.querySelectorAll('.rv1-ego-btn').forEach(btn => {
+        onTap(btn, () => {
+          const hops = parseInt(btn.dataset.hops);
+          const isActive = btn.classList.contains('active');
+          egoToggle.querySelectorAll('.rv1-ego-btn').forEach(b => b.classList.remove('active'));
+          if (hops === 0 || (isActive && hops !== 0)) {
+            // DIRECT clicked, or toggling off 1-hop/2-hop → reset to default state
+            egoToggle.querySelector('[data-hops="0"]').classList.add('active');
+            View1.clearEgoNetwork && View1.clearEgoNetwork();
+            View1.panTo && View1.panTo(id);
+          } else {
+            btn.classList.add('active');
+            View1.setEgoNetwork && View1.setEgoNetwork(id, hops);
+          }
+        });
       });
     }
+
     const backBtn = card.querySelector('.rv1-back-btn');
     if (backBtn) {
       onTap(backBtn, () => { goToCollabMap(); });
     }
+
+    // Fade in content
+    requestAnimationFrame(() => requestAnimationFrame(() => { card.style.opacity = ''; }));
   }
 
   /* ── Default overview for placeholder ───────────────────────────────── */

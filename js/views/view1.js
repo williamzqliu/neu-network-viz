@@ -75,7 +75,24 @@ const View1 = (() => {
     const sel = d3.select(canvas).call(zoomBehavior);
 
     // Mouse events
-    sel.on('click', onClick);
+    // Use pointerdown+pointerup instead of 'click' because D3 zoom installs a
+    // capture-phase click blocker (stopImmediatePropagation) after every pan/zoom
+    // gesture, which silently swallows click events. pointerup is not affected.
+    let _ptrDownPos = null;
+    sel.on('pointerdown.clickdet', e => {
+      if (e.button !== 0) return;
+      _ptrDownPos = [e.offsetX, e.offsetY];
+    });
+    sel.on('pointerup.clickdet', e => {
+      if (e.button !== 0 || !_ptrDownPos) return;
+      const dx = e.offsetX - _ptrDownPos[0];
+      const dy = e.offsetY - _ptrDownPos[1];
+      _ptrDownPos = null;
+      if (dx * dx + dy * dy < 36) { // < 6px movement = treat as click
+        const [mx, my] = d3.pointer(e);
+        _handleTap(mx, my);
+      }
+    });
     sel.on('mousemove', onMouseMove);
     sel.on('mouseleave', () => {
       hoveredId = null;
@@ -121,6 +138,7 @@ const View1 = (() => {
   function build() {
     Logger.info('View1', 'build');
     if (simulation) simulation.stop();
+    if (canvas) canvas.style.pointerEvents = 'none';
 
     // If W is not yet set, defer build to next frame when resize() has run
     if (!W || !H) {
@@ -159,6 +177,7 @@ const View1 = (() => {
     const cached = _layoutCache.get(cacheKey);
     if (cached) {
       _isoNodes = cached.isoNodes;  // iso nodes appear immediately from cache
+      if (canvas) canvas.style.pointerEvents = '';  // cached: no simulation, re-enable immediately
     }
 
     // Build simulation nodes (prefer: current pos → cached pos → random)
@@ -212,6 +231,7 @@ const View1 = (() => {
       .alphaDecay(0.025)
       .on('tick', render)
       .on('end', () => {                    // fire once when simulation cools down
+        if (canvas) canvas.style.pointerEvents = '';  // re-enable interaction
         _layoutIsoNodes(_isoArr);  // always pre-compute; render() will decide whether to show
         // Save positions to cache so next load with same filters is instant
         _layoutCache.set(_cacheKey(), {
@@ -227,6 +247,12 @@ const View1 = (() => {
       });
 
     if (DS.state.frozen) simulation.stop();
+
+    // Re-enable hover before simulation fully settles; adjust delay as needed
+    const HOVER_DELAY_MS = 1500;
+    setTimeout(() => {
+      if (canvas) canvas.style.pointerEvents = '';
+    }, HOVER_DELAY_MS);
 
     renderLegend();
   }
@@ -301,6 +327,7 @@ const View1 = (() => {
     // Links
     if (links) {
       const isTopicMode = !!(topicHL || topicConnected);
+      const egoDirectIds = state.egoDirectIds;
       links.forEach(link => {
         const s = link.source, t = link.target;
         if (!s?.x || !t?.x) return;
@@ -316,20 +343,44 @@ const View1 = (() => {
         const isFaded = hasHL && !isFocus && !isTopHL;
         const isHovEdge = hoveredEdge === link || selectedEdge === link;
 
+        // Ego network tier classification
+        const sIs2Hop = egoDirectIds && topicHL && topicHL.has(s.id) && !egoDirectIds.has(s.id);
+        const tIs2Hop = egoDirectIds && topicHL && topicHL.has(t.id) && !egoDirectIds.has(t.id);
+        const involves2Hop = (sIs2Hop || tIs2Hop) && s.id !== selId && t.id !== selId;
+        const isDash = involves2Hop;
+
+        if (isDash) ctx.setLineDash([3 / transform.k, 4 / transform.k]);
+
         ctx.beginPath();
         ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y);
         ctx.strokeStyle = isHovEdge ? '#A4804A' : '#7A8BAD';
         ctx.lineWidth = (isHovEdge ? 2 : wScale(link.weight || 1) * 0.65) / transform.k;
-        ctx.globalAlpha = isFaded
-          ? dimmedAlpha * 0.4
-          : (isHovEdge ? 0.9 : isFocus ? (isTopicMode ? 0.45 : 0.85) : isTopHL ? 0.55 : 0.2);
+
+        let alpha;
+        if (isFaded) {
+          alpha = dimmedAlpha * 0.4;
+        } else if (isHovEdge) {
+          alpha = 0.9;
+        } else if (isFocus) {
+          alpha = 0.95; // ego→direct (DIRECT + 1-HOP): bright
+        } else if (involves2Hop) {
+          alpha = 0.75; // 2-hop links: dashed
+        } else if (isTopHL) {
+          alpha = 0.88; // direct→direct: medium
+        } else {
+          alpha = 0.2;
+        }
+
+        ctx.globalAlpha = alpha;
         ctx.stroke();
+        if (isDash) ctx.setLineDash([]);
         ctx.globalAlpha = 1;
       });
     }
 
     // Nodes
     if (nodes) {
+      const egoDirectIds = state.egoDirectIds;
       nodes.forEach(node => {
         const r = rScale(node.h_index || 0);
         const col = DS.nodeColor(node);
@@ -343,15 +394,28 @@ const View1 = (() => {
           isTopicMode
             ? (!isTopMatch && !isTopConnected)
             : !isNbr
-        ); const isActive = node.status === 'current';
+        );
+        const isActive = node.status === 'current';
+
+        // Ego network tier: direct (1-hop) vs 2-hop-only
+        const isDirect = egoDirectIds && egoDirectIds.has(node.id);
+        const is2HopOnly = isTopMatch && egoDirectIds && !isDirect;
 
         if (isSel || isHov) { ctx.shadowColor = col; ctx.shadowBlur = 10 / transform.k; }
 
+        // Node fill alpha — 1-hop full, 2-hop semi-transparent
+        let fillAlpha;
+        if (isFaded)         fillAlpha = dimmedAlpha;
+        else if (isTopConnected) fillAlpha = 0.35;
+        else if (is2HopOnly) fillAlpha = isActive ? 0.50 : 0.32;
+        else if (isDirect)   fillAlpha = isActive ? 0.98 : 0.55;
+        else                 fillAlpha = isActive ? 0.98 : 0.55;
+
 ctx.beginPath();
 ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
-ctx.globalAlpha = isFaded ? dimmedAlpha : isTopConnected ? 0.35 : (isActive ? 0.98 : 0.55);
+ctx.globalAlpha = fillAlpha;
 if (node.status === 'retired' || node.status === 'former') {
-  ctx.globalAlpha = isFaded ? dimmedAlpha : 0.4;
+  ctx.globalAlpha = isFaded ? dimmedAlpha : (is2HopOnly ? 0.22 : 0.4);
   ctx.strokeStyle = col;
   ctx.lineWidth = 1.25 / transform.k;
   ctx.stroke();
@@ -362,14 +426,14 @@ if (node.status === 'retired' || node.status === 'former') {
 
         ctx.strokeStyle = col;
         ctx.lineWidth = isSel ? 2 / transform.k : 0.8 / transform.k;
-        ctx.globalAlpha = isFaded ? dimmedAlpha : isTopConnected ? 0.3 : (isActive ? 0.85 : 0.5);
+        ctx.globalAlpha = isFaded ? dimmedAlpha : isTopConnected ? 0.3 : (fillAlpha * 0.88);
         ctx.stroke();
 
         ctx.shadowBlur = 0;
         ctx.globalAlpha = 1;
 
         // Multi-affil ring
-        if (node.multi_affil && !isFaded) {
+        if (node.multi_affil && !isFaded && !is2HopOnly) {
           ctx.beginPath();
           ctx.arc(node.x, node.y, r + 3 / transform.k, 0, Math.PI * 2);
           ctx.strokeStyle = col;
@@ -394,23 +458,23 @@ if (node.status === 'retired' || node.status === 'former') {
         }
 
         // Topic match ring（未连接符合条件）
-        if (isTopMatch && !isSel) {
+        if (isTopMatch && !isSel && !is2HopOnly) {
           ctx.beginPath();
           ctx.arc(node.x, node.y, r * 1.3 + 2.5 / transform.k, 0, Math.PI * 2);
           ctx.strokeStyle = '#A4804A';
-          ctx.lineWidth = 1.2 / transform.k;
-          ctx.globalAlpha = 0.7;
+          ctx.lineWidth = 2.0 / transform.k;
+          ctx.globalAlpha = 0.85;
           ctx.stroke();
           ctx.globalAlpha = 1;
         }
 
-        // 学者自身标注（topic 模式激活时加方形外框）
-        if (isSel && (topicHL || topicConnected)) {
+        // 学者自身标注（选中节点时始终加方形外框）
+        if (isSel) {
           ctx.beginPath();
           ctx.rect(node.x - r - 4 / transform.k, node.y - r - 4 / transform.k,
             (r + 4 / transform.k) * 2, (r + 4 / transform.k) * 2);
           ctx.strokeStyle = col;
-          ctx.lineWidth = 1.5 / transform.k;
+          ctx.lineWidth = 2.2 / transform.k;
           ctx.globalAlpha = 0.8;
           ctx.stroke();
           ctx.globalAlpha = 1;
@@ -424,16 +488,26 @@ if (node.status === 'retired' || node.status === 'former') {
           } else {
             const isTop10 = isBridgeMode && _top10BridgeIds.has(node.id);
             const isTop25 = isBridgeMode && (node.bridge_score >= _bridgeP75);
-            const weight = isTop10 ? '700' : '400';
-            const fontSize = (isTop10 ? 14 : isBridgeMode && !isTop25 ? 10 : 12) / transform.k;
-            const alpha = isBridgeMode && !isTop25 ? 0.6 : isTop10 ? 0.9 : 0.75;
+            const isTopicMatch = isTopMatch && !is2HopOnly; // topic search hit
+            const weight = isSel ? '600' : isTopicMatch ? '600' : isTop10 ? '700' : '500';
+            // Font size: selected/topic-match/direct grow with hlAlpha for smooth transition
+            const baseSize = isBridgeMode ? (isTop10 ? 14 : !isTop25 ? 10 : 13) : 13;
+            const sizeBoost = isSel ? 2.5 * hlAlpha : isTopicMatch ? 2.0 * hlAlpha : isDirect ? 1.0 * hlAlpha : 0;
+            const fontSize = (baseSize + sizeBoost) / transform.k;
+            const alpha = isSel ? 0.95 : isTopicMatch ? 0.92 : isDirect ? 0.88 : isBridgeMode && !isTop25 ? 0.6 : isTop10 ? 0.9 : 0.82;
             ctx.fillStyle = '#3D4460';
             ctx.font = `${weight} ${fontSize}px 'DM Sans',sans-serif`;
             ctx.globalAlpha = alpha;
             const label = isBridgeMode
               ? node.bridge_score.toFixed(3)
               : node.name.split(' ').pop();
-            ctx.fillText(label, node.x + r + 3 / transform.k, node.y);
+            // Offset label to clear selection box / gold ring
+            const labelX = isSel
+              ? node.x + r + 7 / transform.k          // clear of selection box
+              : (isTopMatch && !is2HopOnly)
+                ? node.x + r * 1.3 + 6 / transform.k  // clear of gold topic ring
+                : node.x + r + 4 / transform.k;
+            ctx.fillText(label, labelX, node.y);
             ctx.globalAlpha = 1;
           }
         }
@@ -475,12 +549,30 @@ if (node.status === 'retired' || node.status === 'former') {
         ctx.shadowBlur = 0;
         ctx.globalAlpha = 1;
 
+        // Selection box
+        if (isSel) {
+          ctx.beginPath();
+          ctx.rect(node.x - ISO_R - 4 / transform.k, node.y - ISO_R - 4 / transform.k,
+            (ISO_R + 4 / transform.k) * 2, (ISO_R + 4 / transform.k) * 2);
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 2.2 / transform.k;
+          ctx.globalAlpha = 0.8;
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+
         // Label — only when zoomed in enough (iso nodes are small, avoid clutter)
         if (DS.state.showLabels && transform.k > 0.7 && !isFaded) {
-          ctx.fillStyle = '#4f5673';
-          ctx.font = `${12 / transform.k}px 'DM Sans',sans-serif`;
-          ctx.globalAlpha = 0.7;
-          ctx.fillText(node.name.split(' ').pop(), node.x + ISO_R + 3 / transform.k, node.y + ISO_R * 0.4);
+          const fontSize = (13 + (isSel ? 2.5 * hlAlpha : 0)) / transform.k;
+          const weight = isSel ? '600' : '500';
+          const alpha = isSel ? 0.95 : 0.82;
+          const labelX = isSel
+            ? node.x + ISO_R + 7 / transform.k
+            : node.x + ISO_R + 4 / transform.k;
+          ctx.fillStyle = '#3D4460';
+          ctx.font = `${weight} ${fontSize}px 'DM Sans',sans-serif`;
+          ctx.globalAlpha = alpha;
+          ctx.fillText(node.name.split(' ').pop(), labelX, node.y + ISO_R * 0.4);
           ctx.globalAlpha = 1;
         }
       });
@@ -549,12 +641,15 @@ if (node.status === 'retired' || node.status === 'former') {
       } else {
         DS.state.topicHighlight = null;
         DS.state.topicConnected = null;
+        DS.state.egoDirectIds = null;
         _hideBadge();
       }
 
       animateHL(1);
       render();
-      Panels.showScholarCard(n.id);
+      panTo(n.id);
+      if (typeof showRightPanel === 'function') showRightPanel();
+      RightV1.showScholar(n.id);
     } else {
       if (DS.state.selectedId) {
         const selId = DS.state.selectedId;
@@ -601,11 +696,6 @@ if (node.status === 'retired' || node.status === 'former') {
     }
   }
 
-  function onClick(event) {
-    const [mx, my] = d3.pointer(event);
-    _handleTap(mx, my);
-  }
-
   function onMouseMove(event) {
     if (InputMode.isTouch()) return;
     const [mx, my] = d3.pointer(event);
@@ -636,11 +726,6 @@ if (node.status === 'retired' || node.status === 'former') {
     render();
   }
 
-  function onClick(event) {
-    const [mx, my] = d3.pointer(event);
-    _handleTap(mx, my);
-  }
-
   /* ── Public selection / highlight ────────────────────────────────────── */
   function selectById(id) {
     if (!DS.state.visibleIds.has(id)) {
@@ -649,6 +734,9 @@ if (node.status === 'retired' || node.status === 'former') {
     }
     DS.state.selectedId = id;
     DS.state.topicHighlight = null;
+    DS.state.topicConnected = null;
+    DS.state.egoDirectIds = null;
+    _hideBadge();
     animateHL(1);
     render();
     Panels.showScholarCard(id);
@@ -677,15 +765,18 @@ if (node.status === 'retired' || node.status === 'former') {
   }
 
   function fitToNodes(ids) {
-    const targets = (nodes || []).filter(n => ids.includes(n.id) && n.x != null);
+    const allNodes = [...(nodes || []), ...(_isoNodes || [])];
+    const targets = allNodes.filter(n => ids.includes(n.id) && n.x != null);
     if (!targets.length) return;
     const xs = targets.map(n => n.x);
     const ys = targets.map(n => n.y);
     const minX = Math.min(...xs), maxX = Math.max(...xs);
     const minY = Math.min(...ys), maxY = Math.max(...ys);
     const pad = 80;
-    const scX = (W - pad * 2) / (maxX - minX || 1);
-    const scY = (H - pad * 2) / (maxY - minY || 1);
+    const spanX = Math.max(maxX - minX, 120);
+    const spanY = Math.max(maxY - minY, 120);
+    const scX = (W - pad * 2) / spanX;
+    const scY = (H - pad * 2) / spanY;
     const sc = Math.min(scX, scY, 1.8);
     const cx = (minX + maxX) / 2;
     const cy = (minY + maxY) / 2;
@@ -694,6 +785,11 @@ if (node.status === 'retired' || node.status === 'former') {
   }
 
   function highlightTopic(ids, connectedIds) {
+    // Clear any individual node selection so it doesn't override topic dimming
+    if (DS.state.selectedId) {
+      DS.state.selectedId = null;
+      if (typeof hideRightPanel === 'function') hideRightPanel();
+    }
     DS.state.topicHighlight = ids ? new Set(ids) : null;
     DS.state.topicConnected = connectedIds ? new Set(connectedIds) : null;
     render();
@@ -1185,8 +1281,8 @@ if (node.status === 'retired' || node.status === 'former') {
     el.innerHTML = `<b style="font-family:'Source Serif 4',serif">${d.name}</b>
       <br><span style="color:var(--text3)">${d.main_affil_name || ''}</span>
       <br><span style="color:var(--text2)">h=${d.h_index || '—'} · ${d.degree || 0} collabs${bridgeStr}</span>`;
-    el.style.left = (ev.clientX + 14) + 'px';
-    el.style.top = (ev.clientY - 34) + 'px';
+    el.style.left = (ev.clientX + 22) + 'px';
+    el.style.top = (ev.clientY - 72) + 'px';
     el.classList.add('visible');
   }
 
@@ -1198,8 +1294,8 @@ if (node.status === 'retired' || node.status === 'former') {
       <b style="font-family:'Source Serif 4',serif;display:block">${e.source.name}</b>
       <b style="font-family:'Source Serif 4',serif;display:block">${e.target.name}</b>
       <span style="color:var(--text2)">${w} shared work${w > 1 ? 's' : ''}</span>`;
-    el.style.left = (ev.clientX + 14) + 'px';
-    el.style.top = (ev.clientY - 34) + 'px';
+    el.style.left = (ev.clientX + 22) + 'px';
+    el.style.top = (ev.clientY - 72) + 'px';
     el.classList.add('visible');
   }
 
@@ -1223,10 +1319,44 @@ if (node.status === 'retired' || node.status === 'former') {
     }
   }
 
+  /* ── Ego network ─────────────────────────────────────────────────────── */
+  function setEgoNetwork(id, hops) {
+    const visible = DS.state.visibleIds;
+    const direct = new Set((DS.adjacency.get(id) || []).filter(x => visible.has(x.id)).map(x => x.id));
+    DS.state.egoDirectIds = direct; // always store 1-hop set so render can distinguish tiers
+    if (hops === 1) {
+      DS.state.topicHighlight = direct;
+      DS.state.topicConnected = null;
+    } else {
+      // 2-hop: include direct + second-hop, restricted to currently visible nodes
+      const visible = DS.state.visibleIds;
+      const all = new Set(direct);
+      direct.forEach(nbrId => {
+        (DS.adjacency.get(nbrId) || []).forEach(x => {
+          if (x.id !== id && visible.has(x.id)) all.add(x.id);
+        });
+      });
+      DS.state.topicHighlight = all;
+      DS.state.topicConnected = null;
+    }
+    animateHL(1);
+    render();
+    panTo(id);
+  }
+
+  function clearEgoNetwork() {
+    DS.state.topicHighlight = null;
+    DS.state.topicConnected = null;
+    DS.state.egoDirectIds = null;
+    animateHL(DS.state.selectedId ? 1 : 0);
+    render();
+  }
+
   return {
     init, build, resize, render, initialZoom,
     selectById, focusNode, panTo,
     highlightTopic, clearTopicHighlight,
+    setEgoNetwork, clearEgoNetwork,
     toggleLegendFilter, toggleUnitFilter, renderLegend,
     zoomIn, zoomOut, zoomReset,
     toggleLabels, toggleIsolated,
