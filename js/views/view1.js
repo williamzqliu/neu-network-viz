@@ -36,6 +36,7 @@ const View1 = (() => {
   let zoomBehavior;
   let hlAlpha = 0;
   let hlAlphaTarget = 0;
+  let _hlRafId = null;
   let hasInitialZoomed = false;
   let defaultTransform = null;   // saved after first layout, used by zoomReset
 
@@ -784,9 +785,9 @@ if (node.status === 'retired' || node.status === 'former') {
     d3.select(canvas).transition().duration(800).call(zoomBehavior.transform, t);
   }
 
-  function highlightTopic(ids, connectedIds) {
+  function highlightTopic(ids, connectedIds, opts = {}) {
     // Clear any individual node selection so it doesn't override topic dimming
-    if (DS.state.selectedId) {
+    if (DS.state.selectedId && !opts.keepPanel) {
       DS.state.selectedId = null;
       if (typeof hideRightPanel === 'function') hideRightPanel();
     }
@@ -1244,14 +1245,15 @@ if (node.status === 'retired' || node.status === 'former') {
   /* ── Highlight animation ─────────────────────────────────────────────── */
   function animateHL(target) {
     hlAlphaTarget = target;
+    if (_hlRafId) { cancelAnimationFrame(_hlRafId); _hlRafId = null; }
     const step = () => {
       const diff = hlAlphaTarget - hlAlpha;
-      if (Math.abs(diff) < 0.01) { hlAlpha = hlAlphaTarget; render(); return; }
+      if (Math.abs(diff) < 0.01) { hlAlpha = hlAlphaTarget; render(); _hlRafId = null; return; }
       hlAlpha += diff * 0.18;
       render();
-      requestAnimationFrame(step);
+      _hlRafId = requestAnimationFrame(step);
     };
-    requestAnimationFrame(step);
+    _hlRafId = requestAnimationFrame(step);
   }
 
   /* ── Topic badge (top of canvas) ─────────────────────────────────────── */
@@ -1312,8 +1314,8 @@ if (node.status === 'retired' || node.status === 'former') {
       const cx = d3.mean(nodes.filter(n => isFinite(n.x)), n => n.x) ?? W / 2;  // fallback if nodes not yet positioned
       const cy = d3.mean(nodes.filter(n => isFinite(n.y)), n => n.y) ?? H / 2;  // fallback if nodes not yet positioned
       const t = d3.zoomIdentity
-        .translate(W / 2 - cx * 0.85, H / 2 - cy * 0.85)
-        .scale(0.85);
+        .translate(W / 2 - cx * 0.3, H / 2 - cy * 0.3)
+        .scale(0.3);
       defaultTransform = t;   // save as home position for zoomReset
       d3.select(canvas).transition().duration(600).call(zoomBehavior.transform, t);  // smooth initial zoom
     }

@@ -112,7 +112,7 @@ const LeftV1 = (() => {
           <button class="sec-reset" onclick="LeftV1.resetScholars()"><svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10 6A4 4 0 1 1 8.5 2.8"/><polyline points="9,1 8.5,3.2 6.3,2.7"/></svg>Reset</button>
         </div>
         <div class="lv1-filter-group">
-          <div class="lv1-filter-label" style="font-size:13px">STATUS</div>
+          <div class="lv1-filter-label">STATUS</div>
           <div class="btn-group">
             <button class="filter-btn addon-btn${s.statusFilter.has('current') ? ' active' : ''}" data-sf="current" onclick="LeftV1.setStatus('current')">Active</button>
             <button class="filter-btn addon-btn${s.statusFilter.has('former') ? ' active' : ''}" data-sf="former" onclick="LeftV1.setStatus('former')">Former</button>
@@ -122,8 +122,8 @@ const LeftV1 = (() => {
           </div>
         </div>
         <div class="lv1-filter-group">
-          <div class="lv1-filter-label" style="font-size:13px">TRACK</div>
-          <div class="btn-group">
+          <div class="lv1-filter-label">TRACK</div>
+          <div class="btn-group btn-group-track">
             <button class="filter-btn addon-btn${s.trackFilter.has('research_faculty') ? ' active' : ''}" data-tf="research_faculty" onclick="LeftV1.setTrack('research_faculty')">Research Faculty</button>
             <button class="filter-btn addon-btn${s.trackFilter.has('research_other') ? ' active' : ''}" data-tf="research_other" onclick="LeftV1.setTrack('research_other')">Research Other</button>
             <button class="filter-btn addon-btn${s.trackFilter.has('teaching_clinical') ? ' active' : ''}" data-tf="teaching_clinical" onclick="LeftV1.setTrack('teaching_clinical')">Teaching / Clinical</button>

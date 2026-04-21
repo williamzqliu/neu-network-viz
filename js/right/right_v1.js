@@ -203,15 +203,19 @@ const RightV1 = (() => {
 
     // Research interests
     const fields = det.fields || [];
-    const fieldsHtml = fields.slice(0, 3).map(f => {
-      const subfieldsHtml = (f.subfields || []).slice(0, 5)
-        .map(sf => `<div class="rv1-fi-row">${sf}</div>`).join('');
-      const topicsHtml = (f.topics || []).slice(0, 5)
-        .map(t => `<div class="rv1-fi-topic-row">${t}</div>`).join('');
-      return `<div class="rv1-fi-block">
-        <div class="rv1-fi-field">${f.field}</div>
-        ${subfieldsHtml ? `<div class="rv1-fi-subfields">${subfieldsHtml}</div>` : ''}
-        ${topicsHtml    ? `<div class="rv1-fi-topics">${topicsHtml}</div>`    : ''}
+    const fieldsHtml = fields.slice(0, 3).map((f, fi) => {
+      const sfTags = (f.subfields || []).slice(0, 5).map(sf => {
+        const sfId = `rv1-sf_${id}_${fi}_${sf.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '')}`;
+        return `<span class="rv1-sf-tag" id="${sfId}" data-subfield="${sf.replace(/"/g, '&quot;')}">${sf}</span>`;
+      }).join('');
+      const topicTags = (f.topics || []).slice(0, 5).map(t => {
+        const tId = `rv1-tp_${id}_${fi}_${t.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '')}`;
+        return `<span class="rv1-topic-tag" id="${tId}" data-topic="${t.replace(/"/g, '&quot;')}">${t}</span>`;
+      }).join('');
+      return `<div class="rv1-field-block">
+        <div class="rv1-field-name rv1-field-toggle open">${f.field}</div>
+        ${sfTags    ? `<div class="rv1-sf-list">${sfTags}</div>`       : ''}
+        ${topicTags ? `<div class="rv1-topic-list">${topicTags}</div>` : ''}
       </div>`;
     }).join('');
 
@@ -320,6 +324,21 @@ const RightV1 = (() => {
       });
     }
 
+    // Bind field collapse toggles
+    card.querySelectorAll('.rv1-field-toggle').forEach(el => {
+      onTap(el, e => { e.preventDefault(); toggleField(el); });
+    });
+
+    // Bind subfield tag clicks
+    card.querySelectorAll('.rv1-sf-tag').forEach(tag => {
+      onTap(tag, e => { e.preventDefault(); e.stopPropagation(); toggleSubfield(tag.id, tag.dataset.subfield, e); });
+    });
+
+    // Bind topic tag clicks
+    card.querySelectorAll('.rv1-topic-tag').forEach(tag => {
+      onTap(tag, e => { e.preventDefault(); e.stopPropagation(); toggleTopic(tag.id, tag.dataset.topic, e); });
+    });
+
     const backBtn = card.querySelector('.rv1-back-btn');
     if (backBtn) {
       onTap(backBtn, () => { goToCollabMap(); });
@@ -394,22 +413,22 @@ const RightV1 = (() => {
     return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(3);
   }
 
-  /* ── Field / subfield interaction ───────────────────────────────────── */
+  /* ── Field / subfield / topic interaction ───────────────────────────── */
   function toggleField(el) {
     el.classList.toggle('open');
-    const list = el.nextElementSibling;
-    if (list) list.style.display = list.style.display === 'none' ? 'flex' : 'none';
+    const isOpen = el.classList.contains('open');
+    let sib = el.nextElementSibling;
+    while (sib) {
+      sib.style.display = isOpen ? '' : 'none';
+      sib = sib.nextElementSibling;
+    }
   }
 
-  function toggleSubfield(btnId, subfield, event) {
-    event.stopPropagation();
-    const btn = document.getElementById(btnId);
-    if (!btn) return;
-    btn.classList.toggle('selected');
+  function _applyHighlight() {
+    const selSfTags    = [...document.querySelectorAll('.rv1-sf-tag.selected')];
+    const selTopicTags = [...document.querySelectorAll('.rv1-topic-tag.selected')];
 
-    const selectedTags = [...document.querySelectorAll('.subfield-tag.selected')];
-
-    if (selectedTags.length === 0) {
+    if (selSfTags.length === 0 && selTopicTags.length === 0) {
       DS.state.topicHighlight = null;
       DS.state.topicConnected = null;
       const selId = DS.state.selectedId;
@@ -418,29 +437,45 @@ const RightV1 = (() => {
       return;
     }
 
-    const selectedSubfields = selectedTags.map(t => t.dataset.subfield);
+    const selectedSubfields = selSfTags.map(t => t.dataset.subfield);
+    const selectedTopics    = selTopicTags.map(t => t.dataset.topic);
     const selId = DS.state.selectedId;
     const connectedIds = new Set((DS.adjacency.get(selId) || []).map(x => x.id));
 
     const matchUnconnected = [];
-    const matchConnected = [];
+    const matchConnected   = [];
 
     SCHOLARS.forEach(s => {
       if (s.id === selId) return;
       const det = (typeof SCHOLAR_DETAIL !== 'undefined') ? SCHOLAR_DETAIL[s.id] : null;
       if (!det?.fields) return;
       const scholarSubfields = det.fields.flatMap(f => f.subfields || []);
-      if (selectedSubfields.every(sf => scholarSubfields.includes(sf))) {
-        if (connectedIds.has(s.id)) {
-          matchConnected.push(s.id);
-        } else {
-          matchUnconnected.push(s.id);
-        }
+      const scholarTopics    = det.fields.flatMap(f => f.topics    || []);
+      if (selectedSubfields.every(sf => scholarSubfields.includes(sf)) &&
+          selectedTopics.every(t => scholarTopics.includes(t))) {
+        if (connectedIds.has(s.id)) matchConnected.push(s.id);
+        else                         matchUnconnected.push(s.id);
       }
     });
 
-    View1.highlightTopic && View1.highlightTopic(matchUnconnected, matchConnected);
+    View1.highlightTopic && View1.highlightTopic(matchUnconnected, matchConnected, { keepPanel: true });
   }
 
-  return { reset, showScholar, toggleField, toggleSubfield };
+  function toggleSubfield(btnId, subfield, event) {
+    event.stopPropagation();
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    btn.classList.toggle('selected');
+    _applyHighlight();
+  }
+
+  function toggleTopic(btnId, topic, event) {
+    event.stopPropagation();
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    btn.classList.toggle('selected');
+    _applyHighlight();
+  }
+
+  return { reset, showScholar, toggleField, toggleSubfield, toggleTopic };
 })();

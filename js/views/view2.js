@@ -61,51 +61,177 @@ const View2 = (() => {
     syncSwitcherBtns();
   }
 
-  // ── Overview: dept or center network ─────────────────────────────────────
+  // ── Overview: dept or center — both use hex grid layout ───────────────────
   function buildOverview(type) {
     const isDept = type === 'dept';
-    const unitType = isDept ? 'department' : 'center';
     const crossKey = isDept ? 'cross_dept' : 'cross_center';
-
     const relevantEdges = CROSS_UNIT_EDGES.filter(e => e.cross_type === crossKey);
-    const activeIds = new Set();
-    relevantEdges.forEach(e => { activeIds.add(e.unit_a); activeIds.add(e.unit_b); });
-
-    const validUnits = UNITS.filter(u =>
-      u.unit_type === unitType && u.included && activeIds.has(u.unit_id));
-
-    const maxM = d3.max(validUnits, u => u.scholar_count || 1) || 1;
-    const rScale = d3.scaleSqrt().domain([1, maxM]).range([isDept ? 14 : 10, isDept ? 42 : 32]);
     const maxW = d3.max(relevantEdges, e => e.weight) || 1;
     const wScale = d3.scaleSqrt().domain([1, maxW]).range([0.5, 5]);
 
-    const nodes = validUnits.map(u => ({
-      ...u,
-      r: rScale(u.scholar_count || 1),
-      x: W / 2 + (Math.random() - 0.5) * 400,
-      y: H / 2 + (Math.random() - 0.5) * 400,
-    }));
-    const nodeSet = new Set(nodes.map(u => u.unit_id));
+    if (isDept) {
+      // All included departments → hex grid layout
+      const depts = UNITS.filter(u => u.unit_type === 'department' && u.included);
+      buildDeptHexGrid(depts, relevantEdges, wScale);
+      clearRightPanel();
+      return;
+    }
+
+    // ── Center mode: hex grid layout ──────────────────────────────────────
+    const centers = UNITS.filter(u => u.unit_type === 'center' && u.included);
+    buildCenterHexGrid(centers, relevantEdges, wScale);
+    clearRightPanel();
+  }
+
+  // ── Dept hex grid layout ──────────────────────────────────────────────────
+  function buildDeptHexGrid(depts, relevantEdges, wScale) {
+    const HEX_R     = 36;
+    const COL_PITCH = HEX_R * 1.5;
+    const ROW_PITCH = HEX_R * Math.sqrt(3);
+
+    // Hardcoded tile map: [q, r, collegeAbbrev] — flat-top, even-q offset
+    // Validated: contiguous per college, no shared edges between colleges
+    const RAW_TILES = [
+      // CAMD (6 tiles — 6 departments)
+      [2,0,'CAMD'],[2,1,'CAMD'],[3,0,'CAMD'],[3,1,'CAMD'],[4,0,'CAMD'],[4,1,'CAMD'],
+      // SCI (7 tiles — 7 departments)
+      [6,0,'SCI'],[6,1,'SCI'],[7,0,'SCI'],[7,1,'SCI'],[8,0,'SCI'],[8,1,'SCI'],[9,0,'SCI'],
+      // Bouve (8 tiles — 8 departments)
+      [11,1,'Bouve'],[11,2,'Bouve'],[11,3,'Bouve'],
+      [12,1,'Bouve'],[12,2,'Bouve'],[12,3,'Bouve'],
+      [13,1,'Bouve'],[13,2,'Bouve'],
+      // CSSH (10 tiles — 10 departments)
+      [1,4,'CSSH'],[1,5,'CSSH'],[1,6,'CSSH'],
+      [2,4,'CSSH'],[2,5,'CSSH'],[2,6,'CSSH'],
+      [3,4,'CSSH'],[3,5,'CSSH'],
+      [4,4,'CSSH'],[4,5,'CSSH'],
+      // DMSB (7 tiles — 7 departments)
+      [6,4,'DMSB'],[6,5,'DMSB'],
+      [7,4,'DMSB'],[7,5,'DMSB'],
+      [8,4,'DMSB'],[8,5,'DMSB'],
+      [9,4,'DMSB'],
+      // Eng (5 tiles — 5 departments)
+      [6,8,'Eng'],[7,8,'Eng'],[8,8,'Eng'],
+      [7,9,'Eng'],[8,9,'Eng'],
+      // Single-tile colleges (isolated)
+      [0,2,'CPS'],
+      [10,-1,'Khoury'],
+      [14,4,'Law'],
+      [0,9,'Mills'],
+      [14,9,'London'],
+    ];
+
+    // College unit_name → tile abbreviation
+    const COLLEGE_TO_ABBREV = {
+      'Bouve College of Health Sciences':        'Bouve',
+      'College of Arts, Media and Design':       'CAMD',
+      'College of Engineering':                  'Eng',
+      'College of Professional Studies':         'CPS',
+      'College of Science':                      'SCI',
+      'College of Social Sciences & Humanities': 'CSSH',
+      "D'Amore-McKim School of Business":        'DMSB',
+      'Khoury College of Computer Sciences':     'Khoury',
+      'School of Law':                           'Law',
+      'Mills College at Northeastern':           'Mills',
+      'Northeastern University London':          'London',
+    };
+
+    const collegeUnits    = UNITS.filter(u => u.unit_type === 'college' && u.included);
+    const abbrevToCollege = new Map(
+      collegeUnits
+        .filter(c => COLLEGE_TO_ABBREV[c.unit_name])
+        .map(c => [COLLEGE_TO_ABBREV[c.unit_name], c])
+    );
+    // college unit_id → abbrev (for dept lookup)
+    const collegeIdToAbbrev = new Map(
+      collegeUnits
+        .filter(c => COLLEGE_TO_ABBREV[c.unit_name])
+        .map(c => [c.unit_id, COLLEGE_TO_ABBREV[c.unit_name]])
+    );
+
+    // Group tiles by abbrev, sort within each group by (r, q)
+    const tilesByAbbrev = new Map();
+    RAW_TILES.forEach(([q, r, abbrev]) => {
+      if (!tilesByAbbrev.has(abbrev)) tilesByAbbrev.set(abbrev, []);
+      tilesByAbbrev.get(abbrev).push({ q, r });
+    });
+    tilesByAbbrev.forEach(tiles => tiles.sort((a, b) => a.r !== b.r ? a.r - b.r : a.q - b.q));
+
+    // Group depts by college abbrev, sort alphabetically within each group
+    const deptsByAbbrev = new Map();
+    depts.forEach(d => {
+      const abbrev = collegeIdToAbbrev.get(d.parent_unit_id);
+      if (!abbrev) return;
+      if (!deptsByAbbrev.has(abbrev)) deptsByAbbrev.set(abbrev, []);
+      deptsByAbbrev.get(abbrev).push(d);
+    });
+    deptsByAbbrev.forEach(ds => ds.sort((a, b) => a.unit_name.localeCompare(b.unit_name)));
+
+    // Assign each tile to its department node
+    const ordered = [];
+    RAW_TILES.forEach(([q, r, abbrev]) => {
+      // Mills and London: the college unit itself acts as the department node
+      if (abbrev === 'Mills' || abbrev === 'London') {
+        const college = abbrevToCollege.get(abbrev);
+        if (college) ordered.push({ ...college, _tileQ: q, _tileR: r, _abbrev: abbrev });
+        return;
+      }
+      const tiles    = tilesByAbbrev.get(abbrev) || [];
+      const tileIdx  = tiles.findIndex(t => t.q === q && t.r === r);
+      const ds       = deptsByAbbrev.get(abbrev) || [];
+      if (tileIdx < 0 || tileIdx >= ds.length) return;
+      ordered.push({ ...ds[tileIdx], _tileQ: q, _tileR: r, _abbrev: abbrev });
+    });
+
+    // Compute pixel positions (flat-top hex, even-q offset)
+    ordered.forEach(d => {
+      d.x = d._tileQ * COL_PITCH;
+      d.y = d._tileR * ROW_PITCH + (d._tileQ % 2 === 1 ? ROW_PITCH / 2 : 0);
+    });
+
+    // Center grid in viewport
+    if (ordered.length === 0) return;
+    const xs = ordered.map(d => d.x), ys = ordered.map(d => d.y);
+    const gridCx = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const gridCy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    ordered.forEach(d => { d.x += W / 2 - gridCx; d.y += H / 2 - gridCy; });
+
+    const nodeMap = new Map(ordered.map(n => [n.unit_id, n]));
     const links = relevantEdges
-      .filter(e => nodeSet.has(e.unit_a) && nodeSet.has(e.unit_b))
+      .filter(e => nodeMap.has(e.unit_a) && nodeMap.has(e.unit_b))
       .map(e => ({ ...e, source: e.unit_a, target: e.unit_b }));
 
-    // Links
+    // Precompute group outlines; draw fill layer before nodes, stroke layer after
+    const _deptGroups = d3.group(ordered, d => d._abbrev);
+    const _deptOutlines = new Map();
+    _deptGroups.forEach((groupNodes, abbrev) => {
+      const college = abbrevToCollege.get(abbrev);
+      const color = college ? DS.getColor(college.unit_name) : '#9C9FB2';
+      const path  = _hexGroupOutlinePath(groupNodes, HEX_R, false, 6);
+      if (path) _deptOutlines.set(abbrev, { path, color, groupNodes });
+    });
+
+    // Fill layer — behind links and nodes
+    const hullFill = g.append('g').attr('pointer-events', 'none');
+    _deptOutlines.forEach(({ path, color }) => {
+      hullFill.append('path').attr('d', path)
+        .attr('fill', color + '22').attr('stroke', 'none');
+    });
+
+    // Connection links
     const linkSel = g.append('g').attr('class', 'unit-links')
       .selectAll('line').data(links).join('line')
       .attr('class', 'unit-link')
-      .attr('stroke', '#9BA8C2')
-      .attr('stroke-opacity', 0.25)
+      .attr('x1', d => nodeMap.get(d.unit_a).x).attr('y1', d => nodeMap.get(d.unit_a).y)
+      .attr('x2', d => nodeMap.get(d.unit_b).x).attr('y2', d => nodeMap.get(d.unit_b).y)
+      .attr('stroke', '#9BA8C2').attr('stroke-opacity', 0.55)
       .attr('stroke-width', d => wScale(d.weight));
 
-    // Nodes
+    // Hex nodes
     const nodeSel = g.append('g').attr('class', 'unit-nodes')
-      .selectAll('g').data(nodes, d => d.unit_id).join('g')
+      .selectAll('g').data(ordered, d => d.unit_id).join('g')
       .attr('class', 'unit-hex')
-      .call(d3.drag()
-        .on('start', (ev, d) => { if (!ev.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
-        .on('drag', (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
-        .on('end', (ev, d) => { if (!ev.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }))
+      .attr('transform', d => `translate(${d.x},${d.y})`)
       .on('click', (ev, d) => { ev.stopPropagation(); selectUnit(d, links, nodeSel, linkSel); })
       .on('dblclick', (ev, d) => { ev.stopPropagation(); drillIntoUnit(d); })
       .on('mouseover', (ev, d) => showUnitTooltip(ev, d))
@@ -113,49 +239,316 @@ const View2 = (() => {
       .on('mouseout', hideTooltip);
 
     nodeSel.append('path')
-      .attr('d', d => hexPath(d.r, !isDept))
+      .attr('d', hexPath(HEX_R, false))   // flat-topped
       .attr('fill', d => getUnitColor(d) + 'CC')
       .attr('stroke', d => getUnitColor(d))
-      .attr('stroke-width', 1.5)
-      .attr('cursor', 'pointer');
+      .attr('stroke-width', 1.5).attr('cursor', 'pointer');
 
-    // SoS badge (centers only)
-    if (!isDept) {
-      nodeSel.filter(d => d.sos_type && d.sos_type !== 'Unclassified')
-        .append('text')
-        .attr('y', d => -d.r - 5)
-        .attr('text-anchor', 'middle')
-        .attr('font-size', '7px')
-        .attr('font-family', 'DM Sans, sans-serif')
-        .attr('fill', d => sosBadgeColor(d.sos_type))
-        .attr('pointer-events', 'none')
-        .text(d => d.sos_type);
-    }
-
-    nodeSel.append('text')
-      .attr('text-anchor', 'middle')
-      .attr('dominant-baseline', 'middle')
-      .attr('font-size', d => Math.max(6.5, Math.min(10, d.r / 2.8)) + 'px')
-      .attr('font-family', 'DM Sans, sans-serif')
-      .attr('fill', '#2A3050')
-      .attr('pointer-events', 'none')
-      .text(d => abbrev(d.unit_name, d.r));
-
-    simulation = d3.forceSimulation(nodes)
-      .force('link', d3.forceLink(links).id(d => d.unit_id)
-        .distance(d => 60 + 100 / Math.sqrt((d.weight || 1) / 50 + 1))
-        .strength(0.5))
-      .force('charge', d3.forceManyBody().strength(-350))
-      .force('center', d3.forceCenter(W / 2, H / 2))
-      .force('collide', d3.forceCollide(d => d.r + 8))
-      .on('tick', () => {
-        linkSel
-          .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
-          .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
-        nodeSel.attr('transform', d => `translate(${d.x},${d.y})`);
+    // Two-line text labels
+    nodeSel.each(function(d) {
+      const lines = _hexLabel(d.unit_name);
+      const lh = 9;
+      const startY = -(lines.length - 1) * lh / 2;
+      lines.forEach((line, i) => {
+        d3.select(this).append('text')
+          .attr('y', startY + i * lh)
+          .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+          .attr('font-size', '7.5px').attr('font-family', 'DM Sans, sans-serif')
+          .attr('fill', '#2A3050').attr('pointer-events', 'none')
+          .text(line);
       });
+    });
 
-    _renderRightDeptCenter(type === 'dept' ? 'dept' : 'center');
+    // Stroke layer — on top of nodes
+    const hullStroke = g.append('g').attr('class', 'college-hulls').attr('pointer-events', 'none');
+    _deptOutlines.forEach(({ path, color, groupNodes }, abbrev) => {
+      const college = abbrevToCollege.get(abbrev);
+      hullStroke.append('path').attr('d', path)
+        .attr('fill', 'none')
+        .attr('stroke', color + 'CC')
+        .attr('stroke-width', 3)
+        .attr('stroke-linejoin', 'round');
+      const labelX = d3.mean(groupNodes, d => d.x);
+      const labelY = Math.min(...groupNodes.map(d => d.y)) - HEX_R - 6;
+      hullStroke.append('text')
+        .attr('x', labelX).attr('y', labelY)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', '8px').attr('font-weight', '700')
+        .attr('letter-spacing', '.07em')
+        .attr('font-family', 'DM Sans, sans-serif')
+        .attr('fill', color)
+        .text(_abbrevCollege(college?.unit_name || ''));
+    });
+  }
+
+  // ── Center hex grid layout ────────────────────────────────────────────────
+  function buildCenterHexGrid(centers, relevantEdges, wScale) {
+    const HEX_R     = 32;
+    const COL_PITCH = HEX_R * Math.sqrt(3);  // pointy-top: horizontal pitch = r√3
+    const ROW_PITCH = HEX_R * 1.5;           // pointy-top: vertical pitch = 1.5r
+
+    // Hardcoded tile map: [q, r, sosAbbrev] — pointy-top odd-r offset grid positions
+    // Superstar=top-center, Team-of-Teams=left-mid, Greenfield=right-mid, Unc=bottom
+    const RAW_TILES = [
+      // Superstar (4)
+      [5,0,'SS'],[5,1,'SS'],[6,0,'SS'],[6,1,'SS'],
+      // Team-of-Teams (10)
+      [1,3,'ToT'],[1,4,'ToT'],[1,5,'ToT'],
+      [2,3,'ToT'],[2,4,'ToT'],[2,5,'ToT'],
+      [3,3,'ToT'],[3,4,'ToT'],
+      [4,3,'ToT'],[4,4,'ToT'],
+      // Greenfield (14)
+      [8,2,'GF'],[8,3,'GF'],[8,4,'GF'],[8,5,'GF'],
+      [9,2,'GF'],[9,3,'GF'],[9,4,'GF'],[9,5,'GF'],
+      [10,2,'GF'],[10,3,'GF'],[10,4,'GF'],
+      [11,2,'GF'],[11,3,'GF'],[11,4,'GF'],
+      // Unclassified (36) — cols 0-11, rows 7-9
+      ...[...Array(12)].flatMap((_, q) => [[q,7,'Unc'],[q,8,'Unc'],[q,9,'Unc']]),
+    ];
+
+    // sos_type string → tile abbreviation
+    const SOS_TO_ABBREV = {
+      'Superstar':     'SS',
+      'Team-of-Teams': 'ToT',
+      'Greenfield':    'GF',
+      'Unclassified':  'Unc',
+    };
+
+    // Group tiles by abbrev, sorted (r, q)
+    const tilesByAbbrev = new Map();
+    RAW_TILES.forEach(([q, r, abbrev]) => {
+      if (!tilesByAbbrev.has(abbrev)) tilesByAbbrev.set(abbrev, []);
+      tilesByAbbrev.get(abbrev).push({ q, r });
+    });
+    tilesByAbbrev.forEach(tiles => tiles.sort((a, b) => a.r !== b.r ? a.r - b.r : a.q - b.q));
+
+    // Group centers by sos abbrev, sorted alphabetically
+    const centersByAbbrev = new Map();
+    centers.forEach(c => {
+      const abbrev = SOS_TO_ABBREV[c.sos_type] || 'Unc';
+      if (!centersByAbbrev.has(abbrev)) centersByAbbrev.set(abbrev, []);
+      centersByAbbrev.get(abbrev).push(c);
+    });
+    centersByAbbrev.forEach(cs => cs.sort((a, b) => a.unit_name.localeCompare(b.unit_name)));
+
+    // Assign each tile to a center node
+    const ordered = [];
+    RAW_TILES.forEach(([q, r, abbrev]) => {
+      const tiles   = tilesByAbbrev.get(abbrev) || [];
+      const tileIdx = tiles.findIndex(t => t.q === q && t.r === r);
+      const cs      = centersByAbbrev.get(abbrev) || [];
+      if (tileIdx < 0 || tileIdx >= cs.length) return;
+      ordered.push({ ...cs[tileIdx], _tileQ: q, _tileR: r, _abbrev: abbrev });
+    });
+
+    // Pixel positions — pointy-top odd-r offset: odd rows stagger right by COL_PITCH/2
+    ordered.forEach(d => {
+      d.x = d._tileQ * COL_PITCH + (d._tileR % 2 === 1 ? COL_PITCH / 2 : 0);
+      d.y = d._tileR * ROW_PITCH;
+    });
+
+    if (ordered.length === 0) return;
+    const xs = ordered.map(d => d.x), ys = ordered.map(d => d.y);
+    const gridCx = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const gridCy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    ordered.forEach(d => { d.x += W / 2 - gridCx; d.y += H / 2 - gridCy; });
+
+    const nodeMap = new Map(ordered.map(n => [n.unit_id, n]));
+    const links = relevantEdges
+      .filter(e => nodeMap.has(e.unit_a) && nodeMap.has(e.unit_b))
+      .map(e => ({ ...e, source: e.unit_a, target: e.unit_b }));
+
+    // sosGroups collected here; outlines drawn after nodes
+    const sosGroups = d3.group(ordered, d => d._abbrev);
+
+    // Connection links
+    const linkSel = g.append('g').attr('class', 'unit-links')
+      .selectAll('line').data(links).join('line')
+      .attr('class', 'unit-link')
+      .attr('x1', d => nodeMap.get(d.unit_a).x).attr('y1', d => nodeMap.get(d.unit_a).y)
+      .attr('x2', d => nodeMap.get(d.unit_b).x).attr('y2', d => nodeMap.get(d.unit_b).y)
+      .attr('stroke', '#9BA8C2').attr('stroke-opacity', 0.55)
+      .attr('stroke-width', d => wScale(d.weight));
+
+    // Hex nodes (pointy-top)
+    const nodeSel = g.append('g').attr('class', 'unit-nodes')
+      .selectAll('g').data(ordered, d => d.unit_id).join('g')
+      .attr('class', 'unit-hex')
+      .attr('transform', d => `translate(${d.x},${d.y})`)
+      .on('click', (ev, d) => { ev.stopPropagation(); selectUnit(d, links, nodeSel, linkSel); })
+      .on('dblclick', (ev, d) => { ev.stopPropagation(); drillIntoUnit(d); })
+      .on('mouseover', (ev, d) => showUnitTooltip(ev, d))
+      .on('mousemove', moveTooltip)
+      .on('mouseout', hideTooltip);
+
+    nodeSel.append('path')
+      .attr('d', hexPath(HEX_R, true))   // pointy-top
+      .attr('fill', d => sosBadgeColor(d.sos_type) + 'CC')
+      .attr('stroke', d => sosBadgeColor(d.sos_type))
+      .attr('stroke-width', 1.5).attr('cursor', 'pointer');
+
+    // Two-line text labels
+    nodeSel.each(function(d) {
+      const lines = _hexLabel(d.unit_name);
+      const lh = 9;
+      const startY = -(lines.length - 1) * lh / 2;
+      lines.forEach((line, i) => {
+        d3.select(this).append('text')
+          .attr('y', startY + i * lh)
+          .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+          .attr('font-size', '7.5px').attr('font-family', 'DM Sans, sans-serif')
+          .attr('fill', '#2A3050').attr('pointer-events', 'none')
+          .text(line);
+      });
+    });
+
+    // Draw SoS group outlines after nodes so stroke appears on top
+    const sosHullLayer = g.append('g').attr('class', 'sos-hulls').attr('pointer-events', 'none');
+    sosGroups.forEach((groupNodes, abbrev) => {
+      const sosType = Object.keys(SOS_TO_ABBREV).find(k => SOS_TO_ABBREV[k] === abbrev) || abbrev;
+      const color   = sosBadgeColor(sosType);
+      const outlinePath = _hexGroupOutlinePath(groupNodes, HEX_R, true, 5);
+      if (!outlinePath) return;
+      sosHullLayer.append('path')
+        .attr('d', outlinePath)
+        .attr('fill', 'none')
+        .attr('stroke', color + 'BB')
+        .attr('stroke-width', 1.5)
+        .attr('stroke-linejoin', 'round');
+      const labelX = d3.mean(groupNodes, d => d.x);
+      const isUnc = abbrev === 'Unc';
+      const labelY = isUnc
+        ? Math.max(...groupNodes.map(d => d.y)) + HEX_R + 14
+        : Math.min(...groupNodes.map(d => d.y)) - HEX_R - 18;
+      sosHullLayer.append('text')
+        .attr('x', labelX).attr('y', labelY)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', '8px').attr('font-weight', '700')
+        .attr('letter-spacing', '.07em')
+        .attr('font-family', 'DM Sans, sans-serif')
+        .attr('fill', color)
+        .text(sosType === 'Team-of-Teams' ? 'TEAM-OF-TEAMS'
+          : sosType === 'Unclassified' ? 'UNCLASSIFIED'
+          : sosType.toUpperCase());
+    });
+  }
+
+  function _hexLabel(name) {
+    const words = name
+      .replace(/\b(of|and|&|the|for)\b/gi, '').replace(/\s+/g, ' ').trim()
+      .split(' ').filter(Boolean);
+    if (words.length === 0) return [name.slice(0, 12)];
+    if (words.length === 1) return [words[0].slice(0, 12)];
+    if (words.length === 2) {
+      if (words.join(' ').length <= 12) return [words.join(' ')];
+      return words.map(w => w.slice(0, 10));
+    }
+    const mid = Math.ceil(words.length / 2);
+    return [words.slice(0, mid).join(' ').slice(0, 14), words.slice(mid).join(' ').slice(0, 14)];
+  }
+
+  // Traces the exact boundary of a group of hex tiles.
+  // gap > 0 expands the outline outward by that many px using proper polygon offset.
+  // pointy=false: flat-top even-q offset  (odd columns down)
+  // pointy=true:  pointy-top odd-r offset (odd rows right)
+  function _hexGroupOutlinePath(groupNodes, HEX_R, pointy, gap) {
+    const ao = pointy ? 30 : 0;
+    const tileSet = new Set(groupNodes.map(d => `${d._tileQ},${d._tileR}`));
+
+    // Flat-top even-q: 6 neighbor offsets [even-q, odd-q] per edge i
+    const NBR_FT = [
+      [[1, 0],  [1, 1]],
+      [[0, 1],  [0, 1]],
+      [[-1, 0], [-1, 1]],
+      [[-1,-1], [-1, 0]],
+      [[0, -1], [0, -1]],
+      [[1, -1], [1, 0]],
+    ];
+    // Pointy-top odd-r: 6 neighbor offsets [even-r, odd-r] per edge i
+    // Edge 0→lower-right, 1→lower-left, 2→left, 3→upper-left, 4→upper-right, 5→right
+    const NBR_PT = [
+      [[ 0, +1], [+1, +1]],
+      [[-1, +1], [ 0, +1]],
+      [[-1,  0], [-1,  0]],
+      [[-1, -1], [ 0, -1]],
+      [[ 0, -1], [+1, -1]],
+      [[+1,  0], [+1,  0]],
+    ];
+    const NBR = pointy ? NBR_PT : NBR_FT;
+
+    const vKey = (x, y) => `${Math.round(x * 10)},${Math.round(y * 10)}`;
+    const nextMap  = new Map();
+    const pointMap = new Map();
+    groupNodes.forEach(d => {
+      const q = d._tileQ, r = d._tileR;
+      // pointy-top uses row parity; flat-top uses column parity
+      const par = pointy ? ((r % 2) + 2) % 2 : ((q % 2) + 2) % 2;
+      for (let i = 0; i < 6; i++) {
+        const [dq, dr] = NBR[i][par];
+        if (tileSet.has(`${q + dq},${r + dr}`)) continue;
+        const a0 = (i * 60 + ao) * Math.PI / 180;
+        const a1 = ((i + 1) * 60 + ao) * Math.PI / 180;
+        const v0 = [d.x + HEX_R * Math.cos(a0), d.y + HEX_R * Math.sin(a0)];
+        const v1 = [d.x + HEX_R * Math.cos(a1), d.y + HEX_R * Math.sin(a1)];
+        const k0 = vKey(v0[0], v0[1]);
+        const k1 = vKey(v1[0], v1[1]);
+        nextMap.set(k0, k1);
+        pointMap.set(k0, v0);
+        pointMap.set(k1, v1);
+      }
+    });
+    if (nextMap.size === 0) return null;
+    const start = nextMap.keys().next().value;
+    const pts = [pointMap.get(start)];
+    let cur = nextMap.get(start);
+    let guard = 0;
+    while (cur !== start && guard++ < nextMap.size) {
+      pts.push(pointMap.get(cur));
+      cur = nextMap.get(cur);
+    }
+    if (pts.length < 3) return null;
+    const finalPts = (gap > 0) ? _offsetPts(pts, gap) : pts;
+    return 'M' + finalPts.map(p => p.join(',')).join('L') + 'Z';
+  }
+
+  // Offsets a closed polygon outward by d px using line-line intersection at each vertex.
+  // Assumes clockwise winding (as produced by _hexGroupOutlinePath in SVG coords).
+  function _offsetPts(pts, d) {
+    const n = pts.length;
+    return pts.map((b, i) => {
+      const a  = pts[(i - 1 + n) % n];
+      const c  = pts[(i + 1) % n];
+      const ab = [b[0]-a[0], b[1]-a[1]]; const abL = Math.hypot(ab[0], ab[1]);
+      const bc = [c[0]-b[0], c[1]-b[1]]; const bcL = Math.hypot(bc[0], bc[1]);
+      if (abL < 1e-9 || bcL < 1e-9) return [...b];
+      // Right-hand outward normals for CW polygon
+      const n1 = [ ab[1]/abL, -ab[0]/abL];
+      const n2 = [ bc[1]/bcL, -bc[0]/bcL];
+      // Offset lines: (b + n1*d) along ab, and (b + n2*d) along bc
+      const p1x = b[0]+n1[0]*d, p1y = b[1]+n1[1]*d;
+      const p2x = b[0]+n2[0]*d, p2y = b[1]+n2[1]*d;
+      const denom = ab[0]/abL * bc[1]/bcL - ab[1]/abL * bc[0]/bcL;
+      if (Math.abs(denom) < 1e-9) return [p1x + (p2x-p1x)*0.5, p1y + (p2y-p1y)*0.5];
+      const t = ((p2x-p1x) * bc[1]/bcL - (p2y-p1y) * bc[0]/bcL) / denom;
+      return [p1x + t*ab[0]/abL, p1y + t*ab[1]/abL];
+    });
+  }
+
+  function _abbrevCollege(name) {
+    const map = {
+      'Bouve College of Health Sciences':           'BOUVE',
+      'College of Arts, Media and Design':          'CAMD',
+      'College of Engineering':                     'ENG',
+      'College of Professional Studies':            'CPS',
+      'College of Science':                         'COS',
+      'College of Social Sciences & Humanities':    'CSSH',
+      "D'Amore-McKim School of Business":           'DMSB',
+      'Khoury College of Computer Sciences':        'KHOURY',
+      'School of Law':                              'LAW',
+      'Mills College at Northeastern':              'MILLS',
+      'Northeastern University London':             'NU LONDON',
+    };
+    return map[name] || name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 6);
   }
 
   // ── Compare mode: side-by-side force layouts ──────────────────────────────
@@ -268,7 +661,7 @@ const View2 = (() => {
 
     simulation = simDept;
 
-    _renderRightCompare('compare');
+    clearRightPanel();
   }
 
   // ── Drill into unit internal co-authorship graph ──────────────────────────
@@ -278,8 +671,15 @@ const View2 = (() => {
     if (simulation) { simulation.stop(); simulation = null; }
     g.selectAll('*').remove();
 
-    // Find all scholars in this unit
-    const unitScholars = SCHOLARS.filter(s => s.main_affil_id === unit.unit_id);
+    // Find all scholars in this unit — match primary AND secondary affiliations
+    const unitScholars = SCHOLARS.filter(s => {
+      if (s.main_affil_id === unit.unit_id) return true;
+      const det = (typeof SCHOLAR_DETAIL !== 'undefined') && SCHOLAR_DETAIL[s.id];
+      if (!det) return false;
+      return unit.unit_type === 'center'
+        ? det.ctr_names?.includes(unit.unit_name)
+        : det.dept_names?.includes(unit.unit_name);
+    });
     const unitIds = new Set(unitScholars.map(s => s.id));
 
     // Internal edges: both ends in this unit
@@ -297,23 +697,6 @@ const View2 = (() => {
       y: H2 / 2 + (Math.random() - 0.5) * 300,
     }));
     const links = internalEdges.map(e => ({ ...e }));
-
-    // Back button
-    g.append('foreignObject').attr('x', 12).attr('y', 12).attr('width', 140).attr('height', 28)
-      .append('xhtml:button')
-      .attr('class', 'v2-back-btn')
-      .style('cssText', 'font-family:DM Sans,sans-serif;font-size:var(--fs-xs);padding:4px 10px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;white-space:nowrap')
-      .text('← Back to Overview')
-      .on('click', () => build(currentMode));
-
-    // Unit name label
-    g.append('text')
-      .attr('x', W2 / 2).attr('y', 22)
-      .attr('text-anchor', 'middle')
-      .attr('font-size', '12px').attr('font-weight', '600')
-      .attr('font-family', 'DM Sans, sans-serif')
-      .attr('fill', 'var(--text)')
-      .text(unit.unit_name);
 
     // Links
     const linkSel = g.append('g')
@@ -348,12 +731,15 @@ const View2 = (() => {
       .attr('font-size', '8.5px')
       .attr('font-family', 'DM Sans, sans-serif')
       .attr('fill', 'var(--text2)')
+      .attr('pointer-events', 'none')
       .text(d => d.name.split(' ').pop());
 
     simulation = d3.forceSimulation(nodes)
       .force('link', d3.forceLink(links).id(d => d.id).distance(60).strength(0.4))
-      .force('charge', d3.forceManyBody().strength(-180))
+      .force('charge', d3.forceManyBody().strength(-80))
       .force('center', d3.forceCenter(W2 / 2, H2 / 2))
+      .force('x', d3.forceX(W2 / 2).strength(0.07))
+      .force('y', d3.forceY(H2 / 2).strength(0.07))
       .force('collide', d3.forceCollide(d => rScale(d.h_index || 0) + 5))
       .on('tick', () => {
         linkSel
@@ -378,7 +764,10 @@ const View2 = (() => {
 
     nodeSel
       .select('path')
-      .attr('fill', d => neighborIds.has(d.unit_id) ? getUnitColor(d) + 'EE' : getUnitColor(d) + '33')
+      .attr('fill', d => {
+        const c = d.unit_type === 'center' ? sosBadgeColor(d.sos_type) : getUnitColor(d);
+        return c + (neighborIds.has(d.unit_id) ? 'EE' : '33');
+      })
       .attr('stroke-opacity', d => neighborIds.has(d.unit_id) ? 1 : 0.2);
 
     if (linkSel) {
@@ -397,91 +786,14 @@ const View2 = (() => {
       .attr('fill', function () {
         const p = d3.select(this.parentNode);
         const d = p.datum();
-        return d ? getUnitColor(d) + 'CC' : '#99999999';
+        if (!d) return '#99999999';
+        const c = d.unit_type === 'center' ? sosBadgeColor(d.sos_type) : getUnitColor(d);
+        return c + 'CC';
       })
       .attr('stroke-opacity', 1);
     g.selectAll('.unit-link')
-      .attr('stroke-opacity', 0.25).attr('stroke-width', 1);
-    if (currentMode === 'compare') _renderRightCompare('compare');
-    else _renderRightDeptCenter(currentMode);
-  }
-
-  // ── Right panel: overview ─────────────────────────────────────────────────
-  function _renderRightDeptCenter(type) {
-    const card = document.getElementById('rv2-card');
-    const ph = document.getElementById('rv2-placeholder');
-    if (!card) return;
-    ph.style.display = 'none';
-    card.style.display = 'block';
-
-    const isDept = type === 'dept';
-    const units = UNITS.filter(u => u.unit_type === (isDept ? 'department' : 'center') && u.included)
-      .sort((a, b) => (b.scholar_count || 0) - (a.scholar_count || 0));
-
-    const totalScholars = units.reduce((s, u) => s + (u.scholar_count || 0), 0);
-    const avgDensity = (units.reduce((s, u) => s + (u.density || 0), 0) / units.length).toFixed(3);
-    const avgH = (units.reduce((s, u) => s + (u.avg_h_index || 0), 0) / units.length).toFixed(1);
-
-    card.innerHTML = `
-    <div style="padding:14px 14px 0">
-      <div style="font-size:var(--fs-h3);font-weight:600;font-family:'Source Serif 4',serif;color:var(--text);margin-bottom:4px">
-        ${isDept ? 'Departments' : 'Research Centers'}
-      </div>
-      <div style="font-size:var(--fs-xs);color:var(--text3);margin-bottom:12px">
-        ${isDept ? 'Double-click a node to explore internal network' : 'Double-click a node to explore internal network'}
-      </div>
-
-      <div class="metric-grid" style="margin-bottom:14px">
-        <div class="metric-box">
-          <div class="metric-label">UNITS</div>
-          <div class="metric-value">${units.length}</div>
-        </div>
-        <div class="metric-box">
-          <div class="metric-label">SCHOLARS</div>
-          <div class="metric-value">${totalScholars}</div>
-        </div>
-        <div class="metric-box">
-          <div class="metric-label">AVG H-INDEX</div>
-          <div class="metric-value">${avgH}</div>
-        </div>
-        <div class="metric-box">
-          <div class="metric-label">AVG DENSITY</div>
-          <div class="metric-value">${avgDensity}</div>
-        </div>
-      </div>
-
-      ${!isDept ? `
-      <div class="rp-section-label" style="margin-bottom:6px">SoS CLASSIFICATION</div>
-      <div style="margin-bottom:14px">
-        ${buildSosLegend()}
-      </div>` : ''}
-
-      <div class="rp-section-label" style="margin-bottom:6px">TOP UNITS BY SIZE</div>
-      <div style="margin-bottom:12px">
-        ${units.slice(0, 12).map(u => `
-          <div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid var(--border2);cursor:pointer"
-               ondblclick="View2.drillUnit('${u.unit_id}')">
-            <div style="width:8px;height:8px;border-radius:1px;background:${getUnitColor(u)};flex-shrink:0"></div>
-            <span style="font-size:var(--fs-xs);color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.unit_name}</span>
-            <span style="font-size:var(--fs-xs);color:var(--text3)">${u.scholar_count}</span>
-          </div>`).join('')}
-      </div>
-    </div>`;
-  }
-
-  function buildSosLegend() {
-    const types = [
-      { type: 'Superstar', color: '#C8102E', desc: 'High output, low collaboration' },
-      { type: 'Team-of-Teams', color: '#A4804A', desc: 'Dense internal network' },
-      { type: 'Greenfield', color: '#2E8B57', desc: 'Sparse but growing' },
-      { type: 'Unclassified', color: '#9C9FB2', desc: 'Insufficient data' },
-    ];
-    return types.map(t => `
-      <div style="display:flex;align-items:center;gap:6px;padding:2px 0">
-        <div style="width:8px;height:8px;border-radius:50%;background:${t.color};flex-shrink:0"></div>
-        <span style="font-size:var(--fs-xs);color:var(--text2)">${t.type}</span>
-        <span style="font-size:var(--fs-xs);color:var(--text3)">${t.desc}</span>
-      </div>`).join('');
+      .attr('stroke-opacity', 0.55).attr('stroke-width', 1);
+    clearRightPanel();
   }
 
   // ── Right panel: single unit profile ─────────────────────────────────────
@@ -489,8 +801,13 @@ const View2 = (() => {
     const card = document.getElementById('rv2-card');
     const ph = document.getElementById('rv2-placeholder');
     if (!card) return;
+
+    const unit = DS.unitMap.get(unitId);
+    if (!unit) return;
+
     ph.style.display = 'none';
     card.style.display = 'block';
+    if (typeof showRightPanel === 'function') showRightPanel();
 
     const col = getUnitColor(unit);
     const isDept = unit.unit_type === 'department';
@@ -529,7 +846,7 @@ const View2 = (() => {
         <div class="metric-box"><div class="metric-label">AVG H-INDEX</div><div class="metric-value">${(unit.avg_h_index || 0).toFixed(1)}</div></div>
         <div class="metric-box"><div class="metric-label">DENSITY</div><div class="metric-value">${(unit.density || 0).toFixed(3)}</div></div>
         ${!isDept ? `<div class="metric-box"><div class="metric-label">INT. EDGES</div><div class="metric-value">${unit.internal_edges || '—'}</div></div>` : ''}
-        <div class="metric-box"><div class="metric-label">ICI TOTAL</div><div class="metric-value">${unit.ici_total ? (unit.ici_total / 1000).toFixed(1) + 'K' : '—'}</div></div>
+        <div class="metric-box"><div class="metric-label">ICI TOTAL</div><div class="metric-value">${unit.ici_total != null ? unit.ici_total.toLocaleString() : '—'}</div></div>
       </div>
 
       ${td ? `
@@ -577,6 +894,7 @@ const View2 = (() => {
     if (!card) return;
     ph.style.display = 'none';
     card.style.display = 'block';
+    if (typeof showRightPanel === 'function') showRightPanel();
 
     const col = getUnitColor(unit);
     const active = scholars.filter(s => s.status === 'current').length;
@@ -649,62 +967,6 @@ const View2 = (() => {
     </div>`;
   }
 
-  // ── Right panel: compare mode ─────────────────────────────────────────────
-  function _renderRightCompare() {
-    const card = document.getElementById('rv2-card');
-    const ph = document.getElementById('rv2-placeholder');
-    if (!card) return;
-    ph.style.display = 'none';
-    card.style.display = 'block';
-
-    const depts = UNITS.filter(u => u.unit_type === 'department' && u.included);
-    const centers = UNITS.filter(u => u.unit_type === 'center' && u.included);
-
-    const avgHDept = (depts.reduce((s, u) => s + (u.avg_h_index || 0), 0) / depts.length).toFixed(1);
-    const avgHCtr = (centers.reduce((s, u) => s + (u.avg_h_index || 0), 0) / centers.length).toFixed(1);
-    const avgDDept = (depts.reduce((s, u) => s + (u.density || 0), 0) / depts.length).toFixed(3);
-    const avgDCtr = (centers.reduce((s, u) => s + (u.density || 0), 0) / centers.length).toFixed(3);
-
-    const deptEdgeCnt = CROSS_UNIT_EDGES.filter(e => e.cross_type === 'cross_dept').length;
-    const ctrEdgeCnt = CROSS_UNIT_EDGES.filter(e => e.cross_type === 'cross_center').length;
-
-    card.innerHTML = `
-    <div style="padding:14px 14px 0">
-      <div style="font-size:var(--fs-h3);font-weight:600;font-family:'Source Serif 4',serif;color:var(--text);margin-bottom:12px">
-        Compare Overview
-      </div>
-
-      <div style="font-size:var(--fs-xs);color:var(--text3);margin-bottom:10px">
-        Double-click any node to explore its internal network. Click to highlight connections.
-      </div>
-
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:14px">
-        <div style="font-size:var(--fs-xs);font-weight:600;color:var(--text3);padding-bottom:3px">DEPARTMENTS</div>
-        <div style="font-size:var(--fs-xs);font-weight:600;color:var(--text3);padding-bottom:3px">CENTERS</div>
-
-        <div class="metric-box"><div class="metric-label">COUNT</div><div class="metric-value">${depts.length}</div></div>
-        <div class="metric-box"><div class="metric-label">COUNT</div><div class="metric-value">${centers.length}</div></div>
-
-        <div class="metric-box"><div class="metric-label">AVG H-INDEX</div><div class="metric-value">${avgHDept}</div></div>
-        <div class="metric-box"><div class="metric-label">AVG H-INDEX</div><div class="metric-value">${avgHCtr}</div></div>
-
-        <div class="metric-box"><div class="metric-label">AVG DENSITY</div><div class="metric-value">${avgDDept}</div></div>
-        <div class="metric-box"><div class="metric-label">AVG DENSITY</div><div class="metric-value">${avgDCtr}</div></div>
-
-        <div class="metric-box"><div class="metric-label">CROSS EDGES</div><div class="metric-value">${deptEdgeCnt}</div></div>
-        <div class="metric-box"><div class="metric-label">CROSS EDGES</div><div class="metric-value">${ctrEdgeCnt}</div></div>
-      </div>
-
-      <div class="rp-section-label" style="margin-bottom:6px">LEGEND</div>
-      <div style="font-size:var(--fs-xs);color:var(--text2);line-height:2;margin-bottom:10px">
-        <div>⬡ Flat hexagon = Department</div>
-        <div>⬢ Pointy hexagon = Research Center</div>
-        <div style="margin-top:4px">Node size ∝ scholar count</div>
-        <div>Edge weight ∝ collaboration intensity</div>
-      </div>
-    </div>`;
-  }
-
   // ── Helpers ───────────────────────────────────────────────────────────────
   function getUnitColor(unit) {
     if (unit.unit_type === 'college') return DS.getColor(unit.unit_name);
@@ -746,10 +1008,11 @@ const View2 = (() => {
     card.style.display = 'none';
     card.innerHTML = '';
     if (ph) ph.style.display = '';
+    if (typeof hideRightPanel === 'function') hideRightPanel();
   }
 
   function syncSwitcherBtns() {
-    document.querySelectorAll('#view-switcher-v2 .vs-btn').forEach(b =>
+    document.querySelectorAll('.lv2-switcher .vs-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.subview === currentMode));
     // Show/hide back indicator
     const backBtn = document.getElementById('v2-back-indicator');
@@ -778,14 +1041,22 @@ const View2 = (() => {
     if (unit) drillIntoUnit(unit);
   }
 
-  function backToOverview() { build(currentMode); }
+  function backToOverview() {
+    const restoreId = currentUnitId;   // save before build() resets it to null
+    build(currentMode);
+    if (restoreId) {
+      const unit = DS.unitMap.get(restoreId);
+      if (!unit) return;
+      const nodeSel = g.selectAll('.unit-hex');
+      const linkSel = g.selectAll('.unit-link');
+      selectUnit(unit, linkSel.data(), nodeSel, linkSel);
+    }
+  }
 
   return { build, drillUnit, backToOverview };
 })();
 
 // Global mode switcher
 function setUnitMode(mode) {
-  document.querySelectorAll('#view-switcher-v2 .vs-btn').forEach(b =>
-    b.classList.toggle('active', b.dataset.mode === mode));
   View2.build(mode);
 }

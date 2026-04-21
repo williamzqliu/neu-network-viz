@@ -25,23 +25,28 @@ const LeftV2 = (() => {
 
   /* ── HTML builder ────────────────────────────────────────────────────── */
   function _buildHTML(subview) {
-    const modeLabel = {
-      dept:    'Departments',
-      center:  'Research Centers',
-      compare: 'Compare',
-    }[subview] || 'Departments';
-
-    const hint = subview === 'compare'
-      ? `<div class="lv2-hint-row"><b class="lv2-hint-key">Click</b> a node to highlight connections</div>
-         <div class="lv2-hint-row"><b class="lv2-hint-key">Double-click</b> to explore internal network</div>`
-      : `<div class="lv2-hint-row"><b class="lv2-hint-key">Click</b> a node to highlight connections</div>
-         <div class="lv2-hint-row"><b class="lv2-hint-key">Double-click</b> to explore internal network</div>`;
+    const sosLegend = subview === 'center' ? `
+      <div class="sec-header" style="margin-top:14px">SoS TYPE</div>
+      <div class="lv2-sos-legend">
+        <div class="lv2-sos-row"><span class="lv2-sos-dot" style="background:#C8102E"></span><span class="lv2-sos-label">Superstar</span><span class="lv2-sos-desc">high output, individual</span></div>
+        <div class="lv2-sos-row"><span class="lv2-sos-dot" style="background:#A4804A"></span><span class="lv2-sos-label">Team-of-Teams</span><span class="lv2-sos-desc">dense network</span></div>
+        <div class="lv2-sos-row"><span class="lv2-sos-dot" style="background:#2E8B57"></span><span class="lv2-sos-label">Greenfield</span><span class="lv2-sos-desc">sparse, growing</span></div>
+        <div class="lv2-sos-row"><span class="lv2-sos-dot" style="background:#9C9FB2"></span><span class="lv2-sos-label">Unclassified</span><span class="lv2-sos-desc">insufficient data</span></div>
+      </div>` : '';
 
     return `
       <div class="lv2-section">
         <div class="sec-title">UNIT COLLABORATION</div>
-        <div class="lv2-mode-badge">${modeLabel}</div>
-        <div class="lv2-hint-box">${hint}</div>
+        <div class="lv2-switcher">
+          <button class="vs-btn${subview === 'dept'    ? ' active' : ''}" data-subview="dept"    onclick="setUnitMode('dept')">Departments</button>
+          <button class="vs-btn${subview === 'center'  ? ' active' : ''}" data-subview="center"  onclick="setUnitMode('center')">Research Centers</button>
+          <button class="vs-btn" data-subview="compare" disabled style="opacity:0.35;cursor:not-allowed">Compare</button>
+        </div>
+        ${sosLegend}
+        <div class="lv2-hint-box" style="margin-top:14px">
+          <div class="lv2-hint-row"><b class="lv2-hint-key">Click</b> a unit to see details</div>
+          <div class="lv2-hint-row"><b class="lv2-hint-key">Double-click</b> to explore internal network</div>
+        </div>
       </div>
     `;
   }

@@ -39,11 +39,9 @@ const Panels = (() => {
 
   /* ── Sub-view button highlight ─────────────────────────────────────────── */
   function _updateSubviewButtons(view, subview) {
-    // Each view has its own switcher container; only touch buttons inside it
-    const containerIds = {
-      units: 'view-switcher-v2',
-    };
-    const containerId = containerIds[view];
+    // Units view switcher buttons are embedded in the left panel (LeftV2)
+    // and managed by syncSwitcherBtns() in view2.js — nothing to do here.
+    const containerId = null;
     if (!containerId) return;
 
     const container = getEl(containerId, 'Panels');

@@ -49,11 +49,15 @@ function switchView(view) {
   const currentPane = document.getElementById('view-' + current);
   if (currentPane) currentPane.classList.remove('active');
 
-  // Clear overview content when leaving — D3 SVG elements inside can have
-  // explicit pointer-events that bypass the parent's pointer-events:none
+  // Clear scrollable view content when leaving — inline pointer-events on
+  // SVG/D3 elements can bypass parent pointer-events:none if left in DOM
   if (current === 'overview') {
     const oc = document.getElementById('overview-content');
     if (oc) oc.innerHTML = '';
+  }
+  if (current === 'methods') {
+    const mc = document.getElementById('methods-content');
+    if (mc) mc.innerHTML = '';
   }
 
   const FADE_MS = 220; // must match CSS transition duration
@@ -80,6 +84,10 @@ function switchView(view) {
     // Trigger view-specific build logic
     if (view === 'collab') {
       _initCollabView();
+      ['canvas-search', 'data-overview', 'canvas-bottom-left', 'canvas-controls'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.opacity = '';
+      });
     } else if (view === 'bridging') {
       requestAnimationFrame(() => requestAnimationFrame(() => {
         ViewCluster.init();
@@ -91,10 +99,14 @@ function switchView(view) {
     } else if (view === 'overview') {
       requestAnimationFrame(() => requestAnimationFrame(() => {
         const container = document.getElementById('overview-content');
-        if (container) DrawerV1.render(container, '');
+        if (container) ViewOverview.render(container);
+      }));
+    } else if (view === 'methods') {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const container = document.getElementById('methods-content');
+        if (container) ViewMethods.render(container);
       }));
     }
-    // methods: static content, no build needed
   }, FADE_MS);
 }
 
@@ -230,29 +242,20 @@ function enterApp() {
   setTimeout(() => {
     overlay.style.display = 'none';
     requestAnimationFrame(() => {
-      DS.state.view    = 'collab';
-      DS.state.subview = 'collabmap';
-      View1.init();
-      View1.build();
+      DS.state.view    = 'overview';
+      DS.state.subview = '';
 
-      // Canvas overlays fade in
-      setTimeout(() => {
-        ['data-overview', 'canvas-bottom-left', 'canvas-controls', 'canvas-search'].forEach(id => {
-          const el = document.getElementById(id);
-          if (el) el.style.opacity = '';
-        });
-      }, 800);
+      // Activate overview pane + nav tab
+      document.querySelectorAll('.view').forEach(pane => {
+        pane.classList.toggle('active', pane.id === 'view-overview');
+      });
+      document.querySelectorAll('.nav-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.view === 'overview');
+      });
+      _applyPanelState('overview');
 
-      // Left panel slides in after canvas overlays
-      setTimeout(() => {
-        const leftEl = document.getElementById('panel-left');
-        if (leftEl) leftEl.classList.remove('slide-out');
-        // After slide completes, fade in content
-        setTimeout(() => {
-          const leftContent = document.getElementById('left-content');
-          if (leftContent) leftContent.style.opacity = '';
-        }, 260); // slightly longer than panel transition (250ms)
-      }, 1000);
+      const container = document.getElementById('overview-content');
+      if (container) ViewOverview.render(container);
     });
   }, 400);
 }
@@ -289,10 +292,9 @@ window.addEventListener('DOMContentLoaded', () => {
   // Initialize resizable drawer
   DrawerManager.init();
 
-  // Set initial panel state without triggering view build
-  // (View1.init() + build() is deferred until enterApp() is called)
-  Panels.update('collab', 'collabmap');
-  _applyPanelState('collab');
+  // Set initial panel state (overview landing — no panels shown)
+  Panels.update('overview', '');
+  _applyPanelState('overview');
 
   // Entrance animation: start left panel slid out, content + canvas overlays hidden
   const leftEl = document.getElementById('panel-left');
