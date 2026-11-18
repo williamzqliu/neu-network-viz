@@ -43,7 +43,7 @@
 
   /* ── Typography scale (large screen ≥ 1920px default) ──────────────── */
 
-  /* h0: tutorial title, credits heading */
+  /* h0: credits heading */
   --fs-h0: 24px;
 
   /* h1: scholar name in profile card, section headings, load screen title */
@@ -2088,33 +2088,7 @@ input[type=range] {
   line-height: 1.6;
 }
 
-/* ── Tutorial ───────────────────────────────────────────────────────────── */
-#tutorial-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 900;
-  background: var(--bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 0.6s ease;
-}
-
-#tutorial-card {
-  max-width: 480px;
-  width: 90%;
-  text-align: center;
-  padding: 48px 40px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 8px 40px rgba(20, 24, 32, .10);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
+/* ── Credits card heading (shared .tut-* names from the former entry screen) ── */
 .tut-title {
   font-family: var(--f-serif);
   font-size: var(--fs-h0);
@@ -2130,89 +2104,6 @@ input[type=range] {
   letter-spacing: .08em;
   color: var(--red);
   margin-bottom: 20px;
-}
-
-.tut-desc {
-  font-size: var(--fs-h3);
-  color: var(--text2);
-  line-height: 1.7;
-  margin-bottom: 24px;
-}
-
-.tut-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  width: 100%;
-  margin-bottom: 28px;
-}
-
-.tut-stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 8px 0;
-}
-
-
-.tut-stat-num {
-  font-size: var(--fs-h1);
-  font-weight: 700;
-  color: var(--text);
-  line-height: 1.1;
-}
-
-.tut-stat-label {
-  font-size: var(--fs-body);
-  color: var(--text3);
-  letter-spacing: .04em;
-  text-transform: uppercase;
-}
-
-.tut-features {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 28px;
-  text-align: left;
-}
-
-.tut-feat {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: var(--fs-body);
-  color: var(--text2);
-}
-
-.tut-feat-icon {
-  color: var(--red);
-  font-size: var(--fs-icon);
-  width: 20px;
-  text-align: center;
-}
-
-#tut-enter-btn {
-  background: var(--red);
-  color: var(--inv);
-  border: none;
-  padding: 11px 32px;
-  font-family: var(--f-sans);
-  font-size: var(--fs-h2);
-  font-weight: 600;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: opacity .15s;
-}
-
-#tut-enter-btn:hover {
-  opacity: .75;
-}
-
-.tut-note {
-  font-size: var(--fs-body);
-  color: var(--text3);
-  margin-top: 16px;
 }
 
 #credits-overlay {
@@ -3785,11 +3676,6 @@ input[type=range] {
   opacity: .78;
 }
 
-.ov-cta-hint {
-  font-size: var(--fs-body);
-  color: var(--text3);
-}
-
 /* ── Generic section ── */
 .ov-section {
   padding: 40px 40px;
@@ -3806,14 +3692,6 @@ input[type=range] {
   text-transform: uppercase;
   color: var(--text3);
   margin-bottom: 6px;
-}
-
-.ov-sec-intro {
-  font-size: var(--fs-sec);
-  color: var(--text2);
-  line-height: 1.7;
-  margin-bottom: 20px;
-  max-width: 640px;
 }
 
 /* ── Scroll reveal ── */
@@ -4017,6 +3895,90 @@ input[type=range] {
 .ov-footer-note {
   font-size: var(--fs-body);
   color: var(--text3);
+}
+
+/* Keeps hyphenated terms (h-index, 1-Hop) on one line */
+.ov-nowrap {
+  white-space: nowrap;
+}
+
+/* Desktop note in the hero: only shown on narrow screens (see below) */
+.ov-desktop-note {
+  display: none;
+  font-size: var(--fs-body);
+  color: var(--text3);
+  line-height: 1.6;
+  margin: -16px 0 24px;
+}
+
+/* ── Narrow screens (phones) ──────────────────────────────────────────────
+ * The map views are built for desktop (minimum 1280 × 740), but the
+ * Overview is the landing page, so it has to fit a phone screen.
+ * Without minmax(0, 1fr) the header's nav row widens the grid track
+ * and the page is cropped on the right. */
+@media (max-width: 760px) {
+  #app {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #header {
+    padding: 0 12px;
+    gap: 8px;
+  }
+
+  #hd-brand {
+    min-width: 0;
+  }
+
+  /* Keep the logo, drop the brand text: the hero carries the title */
+  #hd-brand-home > div:last-child {
+    display: none;
+  }
+
+  #hd-nav {
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  #hd-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-tab {
+    flex-shrink: 0;
+  }
+
+  /* Overrides the inline padding on #overview-content in index.html */
+  #overview-content {
+    padding: 12px !important;
+  }
+
+  .ov-hero {
+    padding: 36px 20px 32px;
+  }
+
+  .ov-desktop-note {
+    display: block;
+  }
+
+  .ov-stats {
+    gap: 12px;
+  }
+
+  .ov-section {
+    padding: 28px 8px;
+  }
+
+  .ov-enc-grid,
+  .ov-view-cards {
+    grid-template-columns: 1fr;
+  }
+
+  /* Side padding clears the floating back-to-top button */
+  .ov-footer {
+    padding: 20px 56px;
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

@@ -1,6 +1,7 @@
 /* core/main.js
  * Top-level application controller.
- * Handles view switching, tutorial overlay, and DOMContentLoaded init.
+ * Handles view switching, the credits overlay, and DOMContentLoaded init.
+ * The app opens directly on the Overview view (no entry screen).
  *
  * Depends on: utils.js, datastore.js, panels.js
  * Calls: Panels.update(), View1/2/3, Drawer
@@ -10,7 +11,6 @@
  *   switchSubView(subview)
  *   goToCollabMap()
  *   toggleUnivDrawer()
- *   enterApp()
  *   closeCredits()
  *   v1ZoomIn(), v1ZoomOut(), v1ZoomReset()
  *   toggleLabels(), toggleIsolated(), toggleFreeze()
@@ -233,58 +233,20 @@ function closeCredits() {
   if (ol) ol.classList.remove('visible');
 }
 
-/* ── Tutorial / entry screen ─────────────────────────────────────────────── */
-function enterApp() {
-  const overlay = getEl('tutorial-overlay', 'Main');
-  if (!overlay) return;
-  overlay.style.opacity = '0';
-  overlay.style.transition = 'opacity 0.2s ease';
-  setTimeout(() => {
-    overlay.style.display = 'none';
-    requestAnimationFrame(() => {
-      DS.state.view    = 'overview';
-      DS.state.subview = '';
-
-      // Activate overview pane + nav tab
-      document.querySelectorAll('.view').forEach(pane => {
-        pane.classList.toggle('active', pane.id === 'view-overview');
-      });
-      document.querySelectorAll('.nav-tab').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.view === 'overview');
-      });
-      _applyPanelState('overview');
-
-      const container = document.getElementById('overview-content');
-      if (container) ViewOverview.render(container);
-    });
-  }, 400);
-}
-
 /* ── DOMContentLoaded init ───────────────────────────────────────────────── */
 window.addEventListener('DOMContentLoaded', () => {
   Logger.info('Main', 'DOMContentLoaded - initializing app');
 
-  // Inject dynamic counts into tutorial overlay if present
-  const centerCount = UNITS.filter(u => u.unit_type === 'center' && u.included).length;
-  const scholarCount = SCHOLARS.length;
-  const edgeCount = EDGES.length;
-
-  const elCenters = document.getElementById('tut-center-count');
-  const elScholars = document.getElementById('tut-scholar-count');
-  const elEdges = document.getElementById('tut-edge-count');
-  if (elCenters) elCenters.textContent = centerCount;
-  if (elScholars) elScholars.textContent = scholarCount.toLocaleString();
-  if (elEdges) elEdges.textContent = edgeCount.toLocaleString();
+  // Landing view: Overview. switchView() reads this as the current view,
+  // so it must be set before any nav tab can be clicked.
+  DS.state.view    = 'overview';
+  DS.state.subview = '';
 
   // Show app, hide loading spinner
   const loading = document.getElementById('loading');
   const app = document.getElementById('app');
   if (loading) loading.style.display = 'none';
   if (app) app.style.display = 'grid';
-
-  // Fade in tutorial overlay
-  const tutOverlay = document.getElementById('tutorial-overlay');
-  if (tutOverlay) requestAnimationFrame(() => { tutOverlay.style.opacity = '1'; });
 
   // Initialize search
   Search.init();
@@ -304,6 +266,12 @@ window.addEventListener('DOMContentLoaded', () => {
   ['data-overview', 'canvas-bottom-left', 'canvas-controls', 'canvas-search'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.opacity = '0';
+  });
+
+  // Render the Overview once the app shell has laid out
+  requestAnimationFrame(() => {
+    const container = document.getElementById('overview-content');
+    if (container) ViewOverview.render(container);
   });
 
   Logger.info('Main', 'app initialized');

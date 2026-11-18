@@ -1,10 +1,10 @@
 /* views/view_overview.js
- * Overview view — onboarding and encoding guide.
+ * Overview view — landing page and encoding guide.
  *
  * Sections:
- *   1. Hero (title, stats, CTA)
- *   2. Encoding guide (scrollytelling cards: color, size, bridge halo, edges)
- *   3. Interaction walkthrough
+ *   1. Hero (title, stats, CTA; first screen of the app)
+ *   2. Encoding guide (cards: color, size, bridge ring, lines)
+ *   3. Using the map (three steps)
  *   4. View navigation cards
  *
  * Depends on: utils.js, datastore.js, D3 (global)
@@ -50,9 +50,11 @@ const ViewOverview = (() => {
             <p class="ov-label">NORTHEASTERN UNIVERSITY</p>
             <h1 class="ov-title">Research Collaboration Network</h1>
             <p class="ov-desc">
-              An interactive visualization of intra-university co-authorship,
-              designed for exploring how scholars across departments, schools,
-              and research centers collaborate on published work.
+              See who publishes with whom across Northeastern’s colleges,
+              departments, and research centers.
+            </p>
+            <p class="ov-desktop-note">
+              Open this page on a desktop to use the interactive views.
             </p>
             <div class="ov-stats">
               <div class="ov-stat">
@@ -72,7 +74,6 @@ const ViewOverview = (() => {
             </div>
             <div class="ov-cta-row">
               <button class="ov-cta-btn" onclick="switchView('collab')">Open Collaboration Map</button>
-              <span class="ov-cta-hint">↓ scroll to learn more</span>
             </div>
           </div>
         </div>
@@ -80,10 +81,6 @@ const ViewOverview = (() => {
         <!-- ── 2. Encoding guide ── -->
         <div class="ov-section ov-reveal">
           <div class="ov-sec-label">HOW TO READ THE MAP</div>
-          <p class="ov-sec-intro">
-            Four visual encodings carry the analytical information. Each is explained below
-            with a representative example.
-          </p>
 
           <div class="ov-enc-grid">
 
@@ -98,9 +95,8 @@ const ViewOverview = (() => {
                   <span class="ov-enc-meaning">College affiliation</span>
                 </div>
                 <p class="ov-enc-desc">
-                  Each node is one scholar. Its color encodes their primary college.
-                  Hover a node to see the specific college and department.
-                  Use the left panel to highlight or filter by unit.
+                  Each circle is one scholar, colored by primary college.
+                  Hover over a circle to see the scholar’s college and department.
                 </p>
               </div>
             </div>
@@ -113,12 +109,11 @@ const ViewOverview = (() => {
                 <div class="ov-enc-rule">
                   <span class="ov-enc-channel">Size</span>
                   <span class="ov-enc-arrow">→</span>
-                  <span class="ov-enc-meaning">Research output (h-index)</span>
+                  <span class="ov-enc-meaning">h-index</span>
                 </div>
                 <p class="ov-enc-desc">
-                  A larger node indicates a higher h-index — a measure of
-                  publication output and citation impact. Scholars with broader
-                  academic footprints appear as larger circles in the network.
+                  A larger circle means a higher <span class="ov-nowrap">h-index</span>,
+                  a measure based on publications and citations.
                 </p>
               </div>
             </div>
@@ -134,10 +129,10 @@ const ViewOverview = (() => {
                   <span class="ov-enc-meaning">Bridge scholar</span>
                 </div>
                 <p class="ov-enc-desc">
-                  A gold outer ring marks scholars in the top&nbsp;25% of the bridge
-                  score distribution — faculty whose collaborations span multiple
-                  departments. A larger, more opaque ring indicates a higher tier
-                  (top 5%, 3%, 1%). See the Methods page for the formula.
+                  A gold ring marks scholars in the top&nbsp;25% by bridge score,
+                  which rises with the share of collaborators outside their own
+                  department. Larger, darker rings mark the top 5%, 3%, and 1%.
+                  The formula is on the Methods page.
                 </p>
               </div>
             </div>
@@ -148,15 +143,13 @@ const ViewOverview = (() => {
               </div>
               <div class="ov-enc-body">
                 <div class="ov-enc-rule">
-                  <span class="ov-enc-channel">Edge thickness</span>
+                  <span class="ov-enc-channel">Line thickness</span>
                   <span class="ov-enc-arrow">→</span>
-                  <span class="ov-enc-meaning">Co-authorship weight</span>
+                  <span class="ov-enc-meaning">Joint publications</span>
                 </div>
                 <p class="ov-enc-desc">
-                  An edge connects two scholars who have published together.
-                  Thicker edges indicate more joint publications.
-                  Use the year filter in the left panel to trace how
-                  collaborations evolved over time.
+                  A line joins two scholars who have published together.
+                  Thicker lines mean more joint publications.
                 </p>
               </div>
             </div>
@@ -164,19 +157,19 @@ const ViewOverview = (() => {
           </div>
         </div>
 
-        <!-- ── 3. Interaction walkthrough ── -->
+        <!-- ── 3. Using the map ── -->
         <div class="ov-section ov-section--walk ov-reveal">
-          <div class="ov-sec-label">A REPRESENTATIVE INTERACTION</div>
+          <div class="ov-sec-label">USING THE MAP</div>
           <div class="ov-walk-steps">
 
             <div class="ov-walk-step">
               <div class="ov-walk-num">1</div>
               <div class="ov-walk-body">
-                <div class="ov-walk-title">Click a node</div>
+                <div class="ov-walk-title">Click a scholar</div>
                 <p class="ov-walk-desc">
-                  Clicking any scholar node opens their <b>Scholar Profile</b> in the right panel.
-                  The profile shows their college, department, h-index, citation count, and a list
-                  of collaborators sorted by tie strength.
+                  Their profile opens on the right, with affiliation,
+                  <span class="ov-nowrap">h-index</span>, citations, and
+                  collaborators ranked by tie strength.
                 </p>
               </div>
             </div>
@@ -184,12 +177,9 @@ const ViewOverview = (() => {
             <div class="ov-walk-step">
               <div class="ov-walk-num">2</div>
               <div class="ov-walk-body">
-                <div class="ov-walk-title">Explore research interests</div>
+                <div class="ov-walk-title">Click a topic tag</div>
                 <p class="ov-walk-desc">
-                  The Scholar Profile panel lists their research fields and topics.
-                  Clicking a <b>topic tag</b> highlights every scholar in the network who
-                  shares that topic — revealing clusters of shared research interest
-                  across colleges.
+                  Every scholar who shares that topic is highlighted on the map.
                 </p>
               </div>
             </div>
@@ -197,23 +187,10 @@ const ViewOverview = (() => {
             <div class="ov-walk-step">
               <div class="ov-walk-num">3</div>
               <div class="ov-walk-body">
-                <div class="ov-walk-title">Filter and compare</div>
+                <div class="ov-walk-title">Filter the map</div>
                 <p class="ov-walk-desc">
-                  The left panel provides filters for college, department, year range,
-                  and appointment track. Restricting the view reveals collaboration
-                  density within specific units or time periods.
-                </p>
-              </div>
-            </div>
-
-            <div class="ov-walk-step">
-              <div class="ov-walk-num">4</div>
-              <div class="ov-walk-body">
-                <div class="ov-walk-title">Switch views</div>
-                <p class="ov-walk-desc">
-                  Use the navigation bar to move between the
-                  <b>Collaboration Map</b>, <b>Bridging Scholars</b>, and <b>Research Units</b> views.
-                  Each view addresses a different analytical question about the network.
+                  The left panel filters by college, department, year range,
+                  and appointment track.
                 </p>
               </div>
             </div>
@@ -240,9 +217,9 @@ const ViewOverview = (() => {
               </svg>
               <div class="ov-view-name">Collaboration Map</div>
               <p class="ov-view-desc">
-                Browse the full university network. Filter by college, department,
-                year, or appointment track. Click any scholar to open their profile
-                and explore their ego network.
+                Search for or select a scholar to see their
+                <span class="ov-nowrap">1-Hop</span> and
+                <span class="ov-nowrap">2-Hop</span> collaborators.
               </p>
               <div class="ov-view-cta">Open →</div>
             </div>
@@ -262,9 +239,8 @@ const ViewOverview = (() => {
               </svg>
               <div class="ov-view-name">Bridging Scholars</div>
               <p class="ov-view-desc">
-                Identify scholars who connect departments and colleges.
-                Browse by bridge tier to find the most structurally important
-                cross-unit connectors in the network.
+                This 3D view shows network communities and the bridge scholars
+                who connect them.
               </p>
               <div class="ov-view-cta">Open →</div>
             </div>
@@ -282,8 +258,9 @@ const ViewOverview = (() => {
               </svg>
               <div class="ov-view-name">Research Units</div>
               <p class="ov-view-desc">
-                A unit-level perspective showing collaboration density between
-                colleges, departments, and research centers at the aggregate level.
+                Departments and research centers appear as tiles. Select one to
+                see which units it collaborates with most, or double-click to
+                open its internal network.
               </p>
               <div class="ov-view-cta">Open →</div>
             </div>
