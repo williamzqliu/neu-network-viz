@@ -3842,22 +3842,41 @@ input[type=range] {
   gap: 12px;
 }
 
+/* Each card is a <button>: reset the native button look first */
 .ov-view-card {
+  appearance: none;
+  width: 100%;
+  margin: 0;
+  font: inherit;
+  color: inherit;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 20px 16px;
   cursor: pointer;
-  transition: border-color .15s, box-shadow .15s;
+  box-shadow: 0 1px 3px rgba(20,24,32,.06);
+  transition: border-color .15s, box-shadow .15s, transform .15s;
   display: flex;
   flex-direction: column;
   gap: 6px;
   text-align: left;
 }
 
-.ov-view-card:hover {
+.ov-view-card:hover,
+.ov-view-card:focus-visible {
   border-color: var(--red);
-  box-shadow: 0 2px 12px rgba(200,16,46,.07);
+  box-shadow: 0 6px 18px rgba(200,16,46,.12);
+}
+
+.ov-view-card:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ov-view-card:hover {
+    transform: translateY(-2px);
+  }
 }
 
 .ov-view-icon {
@@ -3878,11 +3897,38 @@ input[type=range] {
   flex: 1;
 }
 
+/* "Open →" reads as a small button; it fills red when the card is hovered */
 .ov-view-cta {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 5px 12px;
+  border: 1px solid var(--red-m);
+  border-radius: 6px;
+  background: var(--red-s);
   font-size: var(--fs-body);
   font-weight: 600;
   color: var(--red);
-  margin-top: 8px;
+  transition: background .15s, border-color .15s, color .15s;
+}
+
+.ov-view-card:hover .ov-view-cta,
+.ov-view-card:focus-visible .ov-view-cta {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
+}
+
+.ov-view-arrow {
+  transition: transform .15s;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ov-view-card:hover .ov-view-arrow {
+    transform: translateX(2px);
+  }
 }
 
 /* ── Footer ── */

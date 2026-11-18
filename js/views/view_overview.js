@@ -198,12 +198,12 @@ const ViewOverview = (() => {
           </div>
         </div>
 
-        <!-- ── 4. View navigation cards ── -->
+        <!-- ── 4. View navigation cards (buttons: focusable, Enter/Space) ── -->
         <div class="ov-section ov-section--views ov-reveal">
           <div class="ov-sec-label">EXPLORE</div>
           <div class="ov-view-cards">
 
-            <div class="ov-view-card" onclick="switchView('collab')">
+            <button type="button" class="ov-view-card" onclick="switchView('collab')">
               <svg class="ov-view-icon" width="32" height="32" viewBox="0 0 32 32" fill="none">
                 <circle cx="16" cy="16" r="3.5" fill="var(--red)" opacity=".85"/>
                 <circle cx="7"  cy="10" r="2.5" fill="var(--red)" opacity=".5"/>
@@ -215,16 +215,16 @@ const ViewOverview = (() => {
                 <line x1="16" y1="16" x2="7"  y2="22" stroke="var(--red)" stroke-width="1.2" opacity=".35"/>
                 <line x1="16" y1="16" x2="25" y2="22" stroke="var(--red)" stroke-width="1.2" opacity=".35"/>
               </svg>
-              <div class="ov-view-name">Collaboration Map</div>
-              <p class="ov-view-desc">
+              <span class="ov-view-name">Collaboration Map</span>
+              <span class="ov-view-desc">
                 Search for or select a scholar to see their
                 <span class="ov-nowrap">1-Hop</span> and
                 <span class="ov-nowrap">2-Hop</span> collaborators.
-              </p>
-              <div class="ov-view-cta">Open →</div>
-            </div>
+              </span>
+              <span class="ov-view-cta">Open <span class="ov-view-arrow" aria-hidden="true">→</span></span>
+            </button>
 
-            <div class="ov-view-card" onclick="switchView('bridging')">
+            <button type="button" class="ov-view-card" onclick="switchView('bridging')">
               <svg class="ov-view-icon" width="32" height="32" viewBox="0 0 32 32" fill="none">
                 <circle cx="6"  cy="11" r="2" fill="var(--text3)" opacity=".5"/>
                 <circle cx="26" cy="11" r="2" fill="var(--text3)" opacity=".5"/>
@@ -237,15 +237,15 @@ const ViewOverview = (() => {
                 <circle cx="16" cy="16" r="8" stroke="var(--gold)" stroke-width="1.2" fill="none" opacity=".45"/>
                 <circle cx="16" cy="16" r="4" fill="var(--gold)" opacity=".85"/>
               </svg>
-              <div class="ov-view-name">Bridging Scholars</div>
-              <p class="ov-view-desc">
+              <span class="ov-view-name">Bridging Scholars</span>
+              <span class="ov-view-desc">
                 This 3D view shows network communities and the bridge scholars
                 who connect them.
-              </p>
-              <div class="ov-view-cta">Open →</div>
-            </div>
+              </span>
+              <span class="ov-view-cta">Open <span class="ov-view-arrow" aria-hidden="true">→</span></span>
+            </button>
 
-            <div class="ov-view-card" onclick="switchView('units')">
+            <button type="button" class="ov-view-card" onclick="switchView('units')">
               <svg class="ov-view-icon" width="32" height="32" viewBox="0 0 32 32" fill="none">
                 <polygon points="16,3 27,9.5 27,22.5 16,29 5,22.5 5,9.5"
                          fill="var(--red)" fill-opacity=".1"
@@ -256,14 +256,14 @@ const ViewOverview = (() => {
                 <line x1="13.8" y1="14.7" x2="5"  y2="9.5"  stroke="var(--red)" stroke-width=".8" opacity=".4"/>
                 <line x1="18.2" y1="14.7" x2="27" y2="9.5"  stroke="var(--red)" stroke-width=".8" opacity=".4"/>
               </svg>
-              <div class="ov-view-name">Research Units</div>
-              <p class="ov-view-desc">
+              <span class="ov-view-name">Research Units</span>
+              <span class="ov-view-desc">
                 Departments and research centers appear as tiles. Select one to
                 see which units it collaborates with most, or double-click to
                 open its internal network.
-              </p>
-              <div class="ov-view-cta">Open →</div>
-            </div>
+              </span>
+              <span class="ov-view-cta">Open <span class="ov-view-arrow" aria-hidden="true">→</span></span>
+            </button>
 
           </div>
         </div>
