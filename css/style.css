@@ -3831,12 +3831,6 @@ input[type=range] {
   line-height: 1.65;
 }
 
-/* Map button after the steps, lined up with the step text
-   (28px number badge + 18px gap) */
-.ov-walk-cta {
-  padding: 6px 0 4px 46px;
-}
-
 /* ── View navigation cards ── */
 .ov-section--views {
   border-top: 1px solid var(--border2);
