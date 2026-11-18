@@ -196,6 +196,10 @@ const ViewOverview = (() => {
             </div>
 
           </div>
+          <!-- Second entry point: the hero button is off screen by here -->
+          <div class="ov-walk-cta">
+            <button class="ov-cta-btn" onclick="switchView('collab')">Open Collaboration Map</button>
+          </div>
         </div>
 
         <!-- ── 4. View navigation cards ── -->
